@@ -1,0 +1,10 @@
+{
+  "modelVersion": "5.0.0",
+  "name": "btir-client",
+  "version": "1.0.0",
+  "description": "Brain Tumor Image Recognition HarmonyOS Client",
+  "dependencies": {},
+  "devDependencies": {
+    "@ohos/hvigor-ohos-plugin": "6.26.8"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "BTIR Client Module"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "Brain Tumor Image Recognition Client"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "BTIR"
+    }
+  ]
+}

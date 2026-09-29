@@ -1,0 +1,11 @@
+{
+  "src": [
+    "pages/LoginPage",
+    "pages/ChangePasswordPage",
+    "pages/HomePage",
+    "pages/UploadPage",
+    "pages/TaskDetailPage",
+    "pages/TaskListPage",
+    "pages/ModalitySelectPage"
+  ]
+}

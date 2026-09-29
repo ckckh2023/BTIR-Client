@@ -1,0 +1,10 @@
+{
+  "modelVersion": "5.0.0",
+  "name": "btir-client",
+  "version": "1.0.0",
+  "description": "Brain Tumor Image Recognition - HarmonyOS Client",
+  "main": "",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {}
+}

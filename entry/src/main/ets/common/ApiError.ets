@@ -12,26 +12,44 @@ export class ApiError extends Error {
     this.retryAfter = 0;
   }
 
+  private static payload(detail: Object | string): Record<string, Object> | null {
+    if (typeof detail !== 'object' || detail === null) {
+      return null;
+    }
+    const response = detail as Record<string, Object>;
+    const nested = response['detail'];
+    if (typeof nested === 'object' && nested !== null) {
+      return nested as Record<string, Object>;
+    }
+    return response;
+  }
+
   private static extractMessage(detail: Object | string): string {
     if (typeof detail === 'string') {
       return detail;
     }
-    const obj = detail as Record<string, Object>;
-    if (obj['message'] && typeof obj['message'] === 'string') {
+    const response = detail as Record<string, Object>;
+    const validationErrors = response['detail'];
+    if (Array.isArray(validationErrors) && validationErrors.length > 0) {
+      const firstError = validationErrors[0] as Record<string, Object>;
+      if (typeof firstError['msg'] === 'string') {
+        return (firstError['msg'] as string).replace(/^Value error,\s*/, '');
+      }
+    }
+    const obj = ApiError.payload(detail);
+    if (obj && typeof obj['message'] === 'string') {
       return obj['message'] as string;
     }
-    if (obj['detail'] && typeof obj['detail'] === 'string') {
+    if (obj && typeof obj['detail'] === 'string') {
       return obj['detail'] as string;
     }
     return JSON.stringify(detail);
   }
 
   private static extractCode(detail: Object | string): string {
-    if (typeof detail === 'object' && detail !== null) {
-      const obj = detail as Record<string, Object>;
-      if (obj['code'] && typeof obj['code'] === 'string') {
-        return obj['code'] as string;
-      }
+    const obj = ApiError.payload(detail);
+    if (obj && typeof obj['code'] === 'string') {
+      return obj['code'] as string;
     }
     return '';
   }
@@ -58,8 +76,11 @@ export class ApiError extends Error {
   }
 
   getModalitySelectionData(): Record<string, Object> | null {
-    if (this.isModalitySelection() && typeof this.detail === 'object') {
-      const obj = this.detail as Record<string, Object>;
+    if (this.isModalitySelection()) {
+      const obj = ApiError.payload(this.detail);
+      if (!obj) {
+        return null;
+      }
       if (obj['modalities']) {
         return obj['modalities'] as Record<string, Object>;
       }

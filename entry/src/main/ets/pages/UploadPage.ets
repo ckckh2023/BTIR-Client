@@ -1,9 +1,10 @@
 import { router } from '@kit.ArkUI';
 import { picker } from '@kit.CoreFileKit';
-import { TaskService } from '../service/TaskService';
+import { common } from '@kit.AbilityKit';
+import { TaskService, UploadArchiveOptions } from '../service/TaskService';
 import { ApiError } from '../common/ApiError';
 import { TokenManager } from '../common/HttpClient';
-import { TaskCreatedResponse, ArchiveModalitySelectionResponse } from '../model/TaskModels';
+import { TaskCreatedResponse } from '../model/TaskModels';
 
 @Entry
 @Component
@@ -15,12 +16,24 @@ struct UploadPage {
   @State caseName: string = '';
   @State studyDate: string = '';
   @State isLoading: boolean = false;
+  @State uploadStage: string = '';
   @State errorMessage: string = '';
   @State uploadMode: string = 'zip';
+  @State showCaseDetails: boolean = false;
   @State niftiFiles: Record<string, string> = {};
   @State niftiFileNames: Record<string, string> = {};
 
   private taskService: TaskService = new TaskService();
+
+  private fileNameFromUri(uri: string): string {
+    const path = uri.split('?')[0].split('#')[0];
+    const encodedName = path.substring(path.lastIndexOf('/') + 1);
+    try {
+      return decodeURIComponent(encodedName);
+    } catch (error) {
+      return encodedName;
+    }
+  }
 
   async selectZipFile(): Promise<void> {
     try {
@@ -28,13 +41,14 @@ struct UploadPage {
       documentSelectOptions.maxSelectNumber = 1;
       documentSelectOptions.fileSuffixFilters = ['.zip'];
 
-      const documentViewPicker = new picker.DocumentViewPicker();
+      const documentViewPicker = new picker.DocumentViewPicker(getContext(this) as common.UIAbilityContext);
       const uris = await documentViewPicker.select(documentSelectOptions);
 
       if (uris && uris.length > 0) {
         this.selectedFileUri = uris[0];
-        const uriParts = uris[0].split('/');
-        this.selectedFileName = uriParts[uriParts.length - 1];
+        const fileName = this.fileNameFromUri(uris[0]);
+        this.selectedFileName = fileName.toLowerCase().endsWith('.zip') ? fileName : '所选 ZIP 文件';
+        this.errorMessage = '';
       }
     } catch (error) {
       this.errorMessage = `选择文件失败: ${String(error)}`;
@@ -45,15 +59,25 @@ struct UploadPage {
     try {
       const documentSelectOptions = new picker.DocumentSelectOptions();
       documentSelectOptions.maxSelectNumber = 1;
-      documentSelectOptions.fileSuffixFilters = ['.nii', '.gz'];
+      documentSelectOptions.fileSuffixFilters = ['.nii', '.nii.gz'];
 
-      const documentViewPicker = new picker.DocumentViewPicker();
+      const documentViewPicker = new picker.DocumentViewPicker(getContext(this) as common.UIAbilityContext);
       const uris = await documentViewPicker.select(documentSelectOptions);
 
       if (uris && uris.length > 0) {
-        this.niftiFiles[modality] = uris[0];
-        const uriParts = uris[0].split('/');
-        this.niftiFileNames[modality] = uriParts[uriParts.length - 1];
+        const files: Record<string, string> = {};
+        for (const key of Object.keys(this.niftiFiles)) {
+          files[key] = this.niftiFiles[key];
+        }
+        files[modality] = uris[0];
+        this.niftiFiles = files;
+        const fileNames: Record<string, string> = {};
+        for (const key of Object.keys(this.niftiFileNames)) {
+          fileNames[key] = this.niftiFileNames[key];
+        }
+        fileNames[modality] = this.fileNameFromUri(uris[0]);
+        this.niftiFileNames = fileNames;
+        this.errorMessage = '';
       }
     } catch (error) {
       this.errorMessage = `选择文件失败: ${String(error)}`;
@@ -63,9 +87,11 @@ struct UploadPage {
   async handleUpload(): Promise<void> {
     this.isLoading = true;
     this.errorMessage = '';
+    this.uploadStage = '';
 
     try {
       let response: TaskCreatedResponse;
+      const cacheDir = (getContext(this) as common.UIAbilityContext).cacheDir;
 
       if (this.uploadMode === 'zip') {
         if (!this.selectedFileUri) {
@@ -73,12 +99,15 @@ struct UploadPage {
           this.isLoading = false;
           return;
         }
+        const options: UploadArchiveOptions = {
+          name: this.taskName.trim() || this.selectedFileName,
+          caseId: this.caseId || undefined,
+          caseName: this.caseName || undefined,
+          studyDate: this.studyDate || undefined,
+          onStage: (stage: string) => { this.uploadStage = stage; }
+        };
         response = await this.taskService.uploadArchive(
-          this.selectedFileUri,
-          this.taskName || undefined,
-          this.caseId || undefined,
-          this.caseName || undefined,
-          this.studyDate || undefined
+          this.selectedFileUri, cacheDir, this.selectedFileName, options
         );
       } else {
         if (!this.niftiFiles['flair'] || !this.niftiFiles['t1ce'] ||
@@ -89,17 +118,23 @@ struct UploadPage {
         }
         response = await this.taskService.uploadNiftiFiles(
           this.niftiFiles,
+          this.niftiFileNames,
+          cacheDir,
           this.taskName || undefined,
           this.caseId || undefined,
           this.caseName || undefined,
-          this.studyDate || undefined
+          this.studyDate || undefined,
+          (stage: string) => { this.uploadStage = stage; }
         );
       }
 
-      // 上传成功，启动推理
-      await this.taskService.runAsync(response.task_id);
-
-      // 跳转到任务详情页
+      // 启动失败时仍进入已创建任务，详情页可确认状态并重试启动。
+      this.uploadStage = '任务已创建，正在启动分析…';
+      try {
+        await this.taskService.runAsync(response.task_id);
+      } catch (error) {
+        // 请求可能已到达服务端，详情页会查询实际任务状态。
+      }
       router.replaceUrl({
         url: 'pages/TaskDetailPage',
         params: { taskId: response.task_id }
@@ -116,7 +151,8 @@ struct UploadPage {
                 modalities: JSON.stringify(modalitiesData),
                 code: error.code,
                 archiveUri: this.selectedFileUri,
-                taskName: this.taskName,
+                archiveName: this.selectedFileName,
+                taskName: this.taskName.trim() || this.selectedFileName,
                 caseId: this.caseId,
                 caseName: this.caseName,
                 studyDate: this.studyDate,
@@ -142,6 +178,7 @@ struct UploadPage {
       }
     } finally {
       this.isLoading = false;
+      this.uploadStage = '';
     }
   }
 
@@ -152,14 +189,16 @@ struct UploadPage {
         Text('上传病例')
           .fontSize(20)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#333333')
+          .fontColor('#1e2d3e')
 
         Blank()
 
         Button('返回')
           .height(32)
           .fontSize(12)
-          .backgroundColor('#757575')
+          .backgroundColor('#586b82')
+          .fontColor('#ffffff')
+          .borderRadius(6)
           .onClick(() => {
             router.back();
           })
@@ -167,27 +206,40 @@ struct UploadPage {
       .width('100%')
       .height(56)
       .padding({ left: 16, right: 16 })
-      .backgroundColor('#FFFFFF')
+      .backgroundColor('#ffffff')
 
       Scroll() {
         Column() {
+          Text('选择病例数据')
+            .fontSize(18)
+            .fontWeight(FontWeight.Bold)
+            .fontColor('#1e2d3e')
+            .width('100%')
+            .margin({ bottom: 8 })
+
+          Text('手机端可上传病例 ZIP，或分别选择四个 NIfTI 文件。DICOM 病例文件夹请先压缩成 ZIP。')
+            .fontSize(13)
+            .fontColor('#586b82')
+            .width('100%')
+            .margin({ bottom: 16 })
+
           // 上传模式切换
           Row() {
-            Button('ZIP 压缩包')
+            Button('病例 ZIP')
               .height(40)
               .fontSize(14)
-              .backgroundColor(this.uploadMode === 'zip' ? '#1A73E8' : '#E0E0E0')
-              .fontColor(this.uploadMode === 'zip' ? '#FFFFFF' : '#666666')
+              .backgroundColor(this.uploadMode === 'zip' ? '#1f477d' : '#e6edf5')
+              .fontColor(this.uploadMode === 'zip' ? '#ffffff' : '#586b82')
               .onClick(() => {
                 this.uploadMode = 'zip';
               })
               .margin({ right: 8 })
 
-            Button('手动选择 NIfTI')
+            Button('四模态 NIfTI')
               .height(40)
               .fontSize(14)
-              .backgroundColor(this.uploadMode === 'nifti' ? '#1A73E8' : '#E0E0E0')
-              .fontColor(this.uploadMode === 'nifti' ? '#FFFFFF' : '#666666')
+              .backgroundColor(this.uploadMode === 'nifti' ? '#1f477d' : '#e6edf5')
+              .fontColor(this.uploadMode === 'nifti' ? '#ffffff' : '#586b82')
               .onClick(() => {
                 this.uploadMode = 'nifti';
               })
@@ -199,14 +251,20 @@ struct UploadPage {
           // ZIP 上传模式
           if (this.uploadMode === 'zip') {
             Column() {
+              Text('ZIP 内应包含 FLAIR、T1CE、T1、T2 四个模态的 NIfTI 文件，或对应的 DICOM 序列。')
+                .fontSize(13)
+                .fontColor('#586b82')
+                .width('100%')
+                .margin({ bottom: 12 })
+
               if (this.selectedFileName) {
                 Row() {
                   Text('已选择: ')
                     .fontSize(14)
-                    .fontColor('#666666')
+                    .fontColor('#586b82')
                   Text(this.selectedFileName)
                     .fontSize(14)
-                    .fontColor('#1A73E8')
+                    .fontColor('#1f477d')
                     .fontWeight(FontWeight.Medium)
                 }
                 .width('100%')
@@ -217,16 +275,17 @@ struct UploadPage {
                 .width('100%')
                 .height(44)
                 .fontSize(16)
-                .backgroundColor('#F5F5F5')
-                .fontColor('#333333')
+                .backgroundColor('#f7f9fc')
+                .fontColor('#1e2d3e')
                 .borderRadius(8)
+                .enabled(!this.isLoading)
                 .onClick(() => {
                   this.selectZipFile();
                 })
             }
             .width('100%')
             .padding(16)
-            .backgroundColor('#FFFFFF')
+            .backgroundColor('#ffffff')
             .borderRadius(12)
             .margin({ bottom: 16 })
           }
@@ -234,22 +293,31 @@ struct UploadPage {
           // NIfTI 上传模式
           if (this.uploadMode === 'nifti') {
             Column() {
+              Text('请分别选择四个 .nii 或 .nii.gz 文件。')
+                .fontSize(13)
+                .fontColor('#586b82')
+                .width('100%')
+                .margin({ bottom: 12 })
               ForEach(['flair', 't1ce', 't1', 't2'], (modality: string) => {
                 Row() {
                   Text(modality.toUpperCase())
                     .fontSize(14)
                     .fontWeight(FontWeight.Medium)
+                    .fontColor('#1e2d3e')
                     .width(60)
 
                   Text(this.niftiFileNames[modality] ?? '未选择')
                     .fontSize(14)
-                    .fontColor(this.niftiFileNames[modality] ? '#1A73E8' : '#999999')
+                    .fontColor(this.niftiFileNames[modality] ? '#1f477d' : '#7d90a8')
                     .layoutWeight(1)
 
                   Button('选择')
                     .height(32)
                     .fontSize(12)
-                    .backgroundColor('#1A73E8')
+                    .backgroundColor('#1f477d')
+                    .fontColor('#ffffff')
+                    .borderRadius(6)
+                    .enabled(!this.isLoading)
                     .onClick(() => {
                       this.selectNiftiFile(modality);
                     })
@@ -262,88 +330,116 @@ struct UploadPage {
             }
             .width('100%')
             .padding(16)
-            .backgroundColor('#FFFFFF')
+            .backgroundColor('#ffffff')
             .borderRadius(12)
             .margin({ bottom: 16 })
           }
 
+          Button(this.showCaseDetails ? '收起病例信息' : '补充病例信息（可选）')
+            .width('100%')
+            .height(40)
+            .backgroundColor('#ffffff')
+            .fontColor('#1f477d')
+            .borderRadius(8)
+            .margin({ bottom: 12 })
+            .onClick(() => {
+              this.showCaseDetails = !this.showCaseDetails;
+            })
+
           // 病例信息
-          Column() {
-            Text('病例信息（可选）')
-              .fontSize(16)
-              .fontWeight(FontWeight.Bold)
-              .fontColor('#333333')
-              .margin({ bottom: 12 })
+          if (this.showCaseDetails) {
+            Column() {
+              Text('病例信息')
+                .fontSize(16)
+                .fontWeight(FontWeight.Bold)
+                .fontColor('#1e2d3e')
+                .margin({ bottom: 12 })
 
-            TextInput({ placeholder: '任务名称' })
-              .width('100%')
-              .height(44)
-              .fontSize(14)
-              .backgroundColor('#F5F5F5')
-              .borderRadius(8)
-              .onChange((value: string) => {
-                this.taskName = value;
-              })
-              .margin({ bottom: 8 })
+              TextInput({ placeholder: '任务名称' })
+                .width('100%')
+                .height(44)
+                .fontSize(14)
+                .backgroundColor('#f7f9fc')
+                .borderRadius(8)
+                .onChange((value: string) => {
+                  this.taskName = value;
+                })
+                .margin({ bottom: 8 })
 
-            TextInput({ placeholder: '病例 ID' })
-              .width('100%')
-              .height(44)
-              .fontSize(14)
-              .backgroundColor('#F5F5F5')
-              .borderRadius(8)
-              .onChange((value: string) => {
-                this.caseId = value;
-              })
-              .margin({ bottom: 8 })
+              TextInput({ placeholder: '病例 ID' })
+                .width('100%')
+                .height(44)
+                .fontSize(14)
+                .backgroundColor('#f7f9fc')
+                .borderRadius(8)
+                .onChange((value: string) => {
+                  this.caseId = value;
+                })
+                .margin({ bottom: 8 })
 
-            TextInput({ placeholder: '病例名称' })
-              .width('100%')
-              .height(44)
-              .fontSize(14)
-              .backgroundColor('#F5F5F5')
-              .borderRadius(8)
-              .onChange((value: string) => {
-                this.caseName = value;
-              })
-              .margin({ bottom: 8 })
+              TextInput({ placeholder: '病例名称' })
+                .width('100%')
+                .height(44)
+                .fontSize(14)
+                .backgroundColor('#f7f9fc')
+                .borderRadius(8)
+                .onChange((value: string) => {
+                  this.caseName = value;
+                })
+                .margin({ bottom: 8 })
 
-            TextInput({ placeholder: '检查日期 (YYYY-MM-DD)' })
-              .width('100%')
-              .height(44)
-              .fontSize(14)
-              .backgroundColor('#F5F5F5')
-              .borderRadius(8)
-              .onChange((value: string) => {
-                this.studyDate = value;
-              })
+              TextInput({ placeholder: '检查日期 (YYYY-MM-DD)' })
+                .width('100%')
+                .height(44)
+                .fontSize(14)
+                .backgroundColor('#f7f9fc')
+                .borderRadius(8)
+                .onChange((value: string) => {
+                  this.studyDate = value;
+                })
+            }
+            .width('100%')
+            .padding(16)
+            .backgroundColor('#ffffff')
+            .borderRadius(12)
+            .margin({ bottom: 16 })
           }
-          .width('100%')
-          .padding(16)
-          .backgroundColor('#FFFFFF')
-          .borderRadius(12)
-          .margin({ bottom: 16 })
         }
         .width('90%')
+        .constraintSize({ minHeight: '100%' })
       }
       .layoutWeight(1)
 
       // 错误提示
       if (this.errorMessage) {
-        Text(this.errorMessage)
-          .fontSize(14)
-          .fontColor('#E53935')
+        Row() {
+          Text(this.errorMessage)
+            .fontSize(14)
+            .fontColor('#b42318')
+        }
+        .width('90%')
+        .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+        .backgroundColor('#fee2e2')
+        .borderRadius(8)
+        .margin({ bottom: 8 })
+      }
+
+      if (this.uploadStage) {
+        Text(this.uploadStage)
+          .fontSize(13)
+          .fontColor('#1f477d')
           .width('90%')
           .margin({ bottom: 8 })
       }
 
       // 上传并分析按钮
-      Button(this.isLoading ? '上传中...' : '上传并开始分析')
+      Button(this.isLoading ? '处理中…' : '开始数据分析')
         .width('90%')
         .height(48)
         .fontSize(16)
         .fontWeight(FontWeight.Medium)
-        .backgroundColor('#1A73E8')
+        .backgroundColor('#1f477d')
+        .fontColor('#ffffff')
         .borderRadius(8)
         .enabled(!this.isLoading)
         .margin({ bottom: 16 })
@@ -353,6 +449,6 @@ struct UploadPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F5F7FA')
+    .backgroundColor('#f2f5f9')
   }
 }

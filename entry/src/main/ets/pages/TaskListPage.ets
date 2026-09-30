@@ -51,21 +51,42 @@ struct TaskListPage {
   getStatusColor(status: string): string {
     switch (status) {
       case 'succeeded':
-        return '#4CAF50';
+        return '#18794e';
       case 'failed':
-        return '#E53935';
+        return '#b42318';
       case 'canceled':
-        return '#9E9E9E';
+        return '#586b82';
       case 'running':
-        return '#1A73E8';
+        return '#1d4ed8';
       case 'queued':
-        return '#FF9800';
+        return '#1d4ed8';
       case 'cancel_requested':
-        return '#FF9800';
+        return '#1d4ed8';
       case 'partial':
-        return '#FF9800';
+        return '#586b82';
       default:
-        return '#757575';
+        return '#586b82';
+    }
+  }
+
+  getStatusBgColor(status: string): string {
+    switch (status) {
+      case 'succeeded':
+        return '#dcfce7';
+      case 'failed':
+        return '#fee2e2';
+      case 'canceled':
+        return '#e6edf5';
+      case 'running':
+        return '#dbeafe';
+      case 'queued':
+        return '#dbeafe';
+      case 'cancel_requested':
+        return '#dbeafe';
+      case 'partial':
+        return '#e6edf5';
+      default:
+        return '#e6edf5';
     }
   }
 
@@ -103,7 +124,9 @@ struct TaskListPage {
         Button('返回')
           .height(32)
           .fontSize(12)
-          .backgroundColor('#757575')
+          .backgroundColor('#586b82')
+          .fontColor('#ffffff')
+          .borderRadius(6)
           .onClick(() => {
             router.back();
           })
@@ -113,14 +136,16 @@ struct TaskListPage {
         Text('病例列表')
           .fontSize(18)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#333333')
+          .fontColor('#1e2d3e')
 
         Blank()
 
         Button('上传')
           .height(32)
           .fontSize(12)
-          .backgroundColor('#1A73E8')
+          .backgroundColor('#1f477d')
+          .fontColor('#ffffff')
+          .borderRadius(6)
           .onClick(() => {
             router.pushUrl({ url: 'pages/UploadPage' });
           })
@@ -128,7 +153,7 @@ struct TaskListPage {
       .width('100%')
       .height(56)
       .padding({ left: 16, right: 16 })
-      .backgroundColor('#FFFFFF')
+      .backgroundColor('#ffffff')
 
       // 搜索和筛选
       Row() {
@@ -136,7 +161,7 @@ struct TaskListPage {
           .layoutWeight(1)
           .height(40)
           .fontSize(14)
-          .backgroundColor('#F5F5F5')
+          .backgroundColor('#f7f9fc')
           .borderRadius(8)
           .onChange((value: string) => {
             this.searchQuery = value;
@@ -146,7 +171,9 @@ struct TaskListPage {
         Button('搜索')
           .height(40)
           .fontSize(14)
-          .backgroundColor('#1A73E8')
+          .backgroundColor('#1f477d')
+          .fontColor('#ffffff')
+          .borderRadius(8)
           .onClick(() => {
             this.currentPage = 1;
             this.fetchTasks();
@@ -161,8 +188,9 @@ struct TaskListPage {
           Button(status === '' ? '全部' : this.getStatusText(status))
             .height(32)
             .fontSize(12)
-            .backgroundColor(this.statusFilter === status ? '#1A73E8' : '#E0E0E0')
-            .fontColor(this.statusFilter === status ? '#FFFFFF' : '#666666')
+            .backgroundColor(this.statusFilter === status ? '#1f477d' : '#e6edf5')
+            .fontColor(this.statusFilter === status ? '#ffffff' : '#586b82')
+            .borderRadius(6)
             .onClick(() => {
               this.statusFilter = status;
               this.currentPage = 1;
@@ -180,10 +208,10 @@ struct TaskListPage {
           LoadingProgress()
             .width(48)
             .height(48)
-            .color('#1A73E8')
+            .color('#1f477d')
           Text('加载中...')
             .fontSize(14)
-            .fontColor('#666666')
+            .fontColor('#586b82')
             .margin({ top: 16 })
         }
         .width('100%')
@@ -193,7 +221,7 @@ struct TaskListPage {
         Column() {
           Text('暂无符合条件的任务')
             .fontSize(14)
-            .fontColor('#999999')
+            .fontColor('#7d90a8')
         }
         .width('100%')
         .layoutWeight(1)
@@ -207,13 +235,16 @@ struct TaskListPage {
                   Text(task.name || task.task_id)
                     .fontSize(16)
                     .fontWeight(FontWeight.Medium)
-                    .fontColor('#333333')
+                    .fontColor('#1e2d3e')
                     .layoutWeight(1)
 
                   Text(this.getStatusText(task.status))
                     .fontSize(12)
                     .fontColor(this.getStatusColor(task.status))
                     .fontWeight(FontWeight.Medium)
+                    .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+                    .backgroundColor(this.getStatusBgColor(task.status))
+                    .borderRadius(4)
                 }
                 .width('100%')
                 .margin({ bottom: 4 })
@@ -221,35 +252,40 @@ struct TaskListPage {
                 Row() {
                   Text(task.task_id)
                     .fontSize(12)
-                    .fontColor('#999999')
+                    .fontColor('#7d90a8')
                     .layoutWeight(1)
 
                   if (task.case_name) {
                     Text(task.case_name)
                       .fontSize(12)
-                      .fontColor('#666666')
+                      .fontColor('#586b82')
                       .margin({ right: 8 })
                   }
 
                   if (task.study_date) {
                     Text(task.study_date)
                       .fontSize(12)
-                      .fontColor('#666666')
+                      .fontColor('#586b82')
                   }
                 }
                 .width('100%')
 
                 if (task.error) {
-                  Text(task.error.message)
-                    .fontSize(12)
-                    .fontColor('#E53935')
-                    .width('100%')
-                    .margin({ top: 4 })
+                  Row() {
+                    Text(task.error.message)
+                      .fontSize(12)
+                      .fontColor('#b42318')
+                  }
+                  .width('100%')
+                  .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+                  .backgroundColor('#fee2e2')
+                  .borderRadius(6)
+                  .margin({ top: 4 })
                 }
               }
               .width('100%')
               .padding(16)
-              .backgroundColor('#FFFFFF')
+              .backgroundColor('#ffffff')
               .borderRadius(12)
               .margin({ bottom: 8 })
               .onClick(() => {
@@ -259,21 +295,20 @@ struct TaskListPage {
                 });
               })
             }
-          })
+          }, (task: TaskSummaryResponse) => task.task_id)
         }
         .width('90%')
         .layoutWeight(1)
         .divider({ strokeWidth: 0 })
       }
-
-      // 分页
       if (this.total > this.pageSize) {
         Row() {
           Button('上一页')
             .height(36)
             .fontSize(12)
-            .backgroundColor(this.currentPage > 1 ? '#1A73E8' : '#E0E0E0')
-            .fontColor(this.currentPage > 1 ? '#FFFFFF' : '#999999')
+            .backgroundColor(this.currentPage > 1 ? '#1f477d' : '#e6edf5')
+            .fontColor(this.currentPage > 1 ? '#ffffff' : '#7d90a8')
+            .borderRadius(6)
             .enabled(this.currentPage > 1)
             .onClick(() => {
               this.currentPage--;
@@ -283,13 +318,14 @@ struct TaskListPage {
 
           Text(`第 ${this.currentPage} / ${this.totalPages} 页，共 ${this.total} 项`)
             .fontSize(12)
-            .fontColor('#666666')
+            .fontColor('#586b82')
 
           Button('下一页')
             .height(36)
             .fontSize(12)
-            .backgroundColor(this.currentPage < this.totalPages ? '#1A73E8' : '#E0E0E0')
-            .fontColor(this.currentPage < this.totalPages ? '#FFFFFF' : '#999999')
+            .backgroundColor(this.currentPage < this.totalPages ? '#1f477d' : '#e6edf5')
+            .fontColor(this.currentPage < this.totalPages ? '#ffffff' : '#7d90a8')
+            .borderRadius(6)
             .enabled(this.currentPage < this.totalPages)
             .onClick(() => {
               this.currentPage++;
@@ -304,15 +340,20 @@ struct TaskListPage {
 
       // 错误提示
       if (this.errorMessage) {
-        Text(this.errorMessage)
-          .fontSize(14)
-          .fontColor('#E53935')
-          .width('90%')
-          .margin({ bottom: 8 })
+        Row() {
+          Text(this.errorMessage)
+            .fontSize(14)
+            .fontColor('#b42318')
+        }
+        .width('90%')
+        .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+        .backgroundColor('#fee2e2')
+        .borderRadius(8)
+        .margin({ bottom: 8 })
       }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F5F7FA')
+    .backgroundColor('#f2f5f9')
   }
 }

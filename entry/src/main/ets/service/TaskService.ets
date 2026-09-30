@@ -1,7 +1,4 @@
-import { HttpClient, TokenManager } from '../common/HttpClient';
-import { http } from '@kit.NetworkKit';
-import { ApiConfig } from '../common/ApiConfig';
-import { ApiError } from '../common/ApiError';
+import { HttpClient, MultipartUploadFile } from '../common/HttpClient';
 import {
   TaskCreatedResponse,
   TaskStatusResponse,
@@ -12,14 +9,20 @@ import {
   TaskRunListResponse,
 } from '../model/TaskModels';
 
-interface NiftiFileUpload {
-  name: string;
-  type: string;
-  uri: string;
-}
-
 interface RenameRequest {
   name: string;
+}
+
+export interface UploadArchiveOptions {
+  name?: string;
+  caseId?: string;
+  caseName?: string;
+  studyDate?: string;
+  modalityEntries?: Record<string, string>;
+  modalitySeriesUids?: Record<string, string>;
+  replacementFiles?: Record<string, string>;
+  replacementNames?: Record<string, string>;
+  onStage?: (stage: string) => void;
 }
 
 export class TaskService {
@@ -27,98 +30,86 @@ export class TaskService {
 
   async uploadArchive(
     archiveUri: string,
-    name?: string,
-    caseId?: string,
-    caseName?: string,
-    studyDate?: string,
-    modalityEntries?: Record<string, string>,
-    modalitySeriesUids?: Record<string, string>
+    cacheDir: string,
+    archiveName: string,
+    options: UploadArchiveOptions
   ): Promise<TaskCreatedResponse> {
     const extraFields: Record<string, string> = {};
-    if (name) extraFields['name'] = name;
-    if (caseId) extraFields['case_id'] = caseId;
-    if (caseName) extraFields['case_name'] = caseName;
-    if (studyDate) extraFields['study_date'] = studyDate;
-    if (modalityEntries) {
-      for (const key of Object.keys(modalityEntries)) {
-        extraFields[key] = modalityEntries[key];
+    if (options.name) extraFields['name'] = options.name;
+    if (options.caseId) extraFields['case_id'] = options.caseId;
+    if (options.caseName) extraFields['case_name'] = options.caseName;
+    if (options.studyDate) extraFields['study_date'] = options.studyDate;
+    if (options.modalityEntries) {
+      for (const key of Object.keys(options.modalityEntries)) {
+        const modality = key.replace(/_entry$/, '');
+        if (!options.replacementFiles || !options.replacementFiles[modality]) {
+          extraFields[key] = options.modalityEntries[key];
+        }
       }
     }
-    if (modalitySeriesUids) {
-      for (const key of Object.keys(modalitySeriesUids)) {
-        extraFields[key] = modalitySeriesUids[key];
+    if (options.modalitySeriesUids) {
+      for (const key of Object.keys(options.modalitySeriesUids)) {
+        const modality = key.replace(/_series_uid$/, '');
+        if (!options.replacementFiles || !options.replacementFiles[modality]) {
+          extraFields[key] = options.modalitySeriesUids[key];
+        }
       }
     }
 
-    const fileName = archiveUri.split('/').pop() ?? 'archive.zip';
-    return this.httpClient.uploadFile<TaskCreatedResponse>(
-      '/tasks/3d/archive', archiveUri, fileName, 'application/zip', extraFields
+    const fileName = archiveName.toLowerCase().endsWith('.zip') ? archiveName : 'archive.zip';
+    const files: MultipartUploadFile[] = [
+      { fieldName: 'archive', uri: archiveUri, fileName: fileName, contentType: 'application/zip' }
+    ];
+    if (options.replacementFiles) {
+      for (const key of ['flair', 't1ce', 't1', 't2']) {
+        const uri = options.replacementFiles[key];
+        if (uri) {
+          const selectedName = options.replacementNames ? options.replacementNames[key] : '';
+          const replacementName = selectedName && /\.nii(\.gz)?$/i.test(selectedName)
+            ? selectedName : `${key}.nii.gz`;
+          files.push({
+            fieldName: key,
+            uri: uri,
+            fileName: replacementName,
+            contentType: replacementName.toLowerCase().endsWith('.gz')
+              ? 'application/gzip' : 'application/octet-stream',
+          });
+        }
+      }
+    }
+    return this.httpClient.uploadFiles<TaskCreatedResponse>(
+      '/tasks/3d/archive', files, cacheDir, extraFields, options.onStage
     );
   }
 
   async uploadNiftiFiles(
     files: Record<string, string>,
+    fileNames: Record<string, string>,
+    cacheDir: string,
     name?: string,
     caseId?: string,
     caseName?: string,
-    studyDate?: string
+    studyDate?: string,
+    onStage?: (stage: string) => void
   ): Promise<TaskCreatedResponse> {
-    const baseUrl = ApiConfig.getInstance().baseUrl;
-    const url = `${baseUrl}/tasks/3d`;
-    const headers: Record<string, string> = {};
-    const token = TokenManager.getInstance().getToken();
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const extraData: Record<string, Object> = {};
-    for (const key of Object.keys(files)) {
+    const uploadFiles: MultipartUploadFile[] = [];
+    for (const key of ['flair', 't1ce', 't1', 't2']) {
       const uri = files[key];
-      const fileName = uri.split('/').pop() ?? `${key}.nii.gz`;
-      const fileObj: NiftiFileUpload = {
-        name: fileName,
-        type: 'application/gzip',
+      const selectedName = fileNames[key] ?? '';
+      const fileName = /\.nii(\.gz)?$/i.test(selectedName) ? selectedName : `${key}.nii.gz`;
+      uploadFiles.push({
+        fieldName: key,
         uri: uri,
-      };
-      extraData[key] = fileObj;
+        fileName: fileName,
+        contentType: fileName.toLowerCase().endsWith('.gz') ? 'application/gzip' : 'application/octet-stream',
+      });
     }
-    if (name) extraData['name'] = name;
-    if (caseId) extraData['case_id'] = caseId;
-    if (caseName) extraData['case_name'] = caseName;
-    if (studyDate) extraData['study_date'] = studyDate;
-
-    try {
-      const httpRequest = http.createHttp();
-      const options: http.HttpRequestOptions = {
-        method: http.RequestMethod.POST,
-        header: headers,
-        expectDataType: http.HttpDataType.STRING,
-        extraData: extraData,
-      };
-
-      const response = await httpRequest.request(url, options);
-      httpRequest.destroy();
-
-      const status = response.responseCode;
-      const responseText = response.result as string;
-      let responseData: Object | string = responseText;
-      try {
-        responseData = JSON.parse(responseText);
-      } catch (e) {
-        // 非 JSON
-      }
-
-      if (status >= 400) {
-        throw new ApiError(status, responseData);
-      }
-
-      return responseData as TaskCreatedResponse;
-    } catch (error) {
-      if (error instanceof ApiError) {
-        throw error;
-      }
-      throw new ApiError(0, String(error), `NIfTI 上传失败: ${String(error)}`);
-    }
+    const fields: Record<string, string> = {};
+    if (name) fields['name'] = name;
+    if (caseId) fields['case_id'] = caseId;
+    if (caseName) fields['case_name'] = caseName;
+    if (studyDate) fields['study_date'] = studyDate;
+    return this.httpClient.uploadFiles<TaskCreatedResponse>('/tasks/3d', uploadFiles, cacheDir, fields, onStage);
   }
 
   async runAsync(taskId: string): Promise<TaskEnqueuedResponse> {

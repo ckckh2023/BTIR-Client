@@ -1,5 +1,6 @@
 import { AuthService } from '../service/AuthService';
 import { ApiError } from '../common/ApiError';
+import { buffer } from '@kit.ArkTS';
 import { router } from '@kit.ArkUI';
 
 @Entry
@@ -14,16 +15,23 @@ struct ChangePasswordPage {
   private authService: AuthService = new AuthService();
 
   async handleChangePassword(): Promise<void> {
-    if (!this.currentPassword || !this.newPassword) {
-      this.errorMessage = '请填写所有字段';
+    if (!this.currentPassword) {
+      this.errorMessage = '请输入当前密码';
       return;
     }
-
-    if (this.newPassword.length < 6) {
-      this.errorMessage = '新密码长度至少6个字符';
+    if (!this.newPassword) {
+      this.errorMessage = '请输入新密码';
       return;
     }
-
+    if (this.newPassword.length < 6 || this.newPassword.length > 72) {
+      this.errorMessage = '新密码长度应为 6 至 72 个字符';
+      return;
+    }
+    const utf8ByteLength = buffer.from(this.newPassword, 'utf-8').length;
+    if (utf8ByteLength > 72) {
+      this.errorMessage = '密码的 UTF-8 编码不能超过 72 字节';
+      return;
+    }
     if (this.newPassword !== this.confirmPassword) {
       this.errorMessage = '两次输入的新密码不一致';
       return;
@@ -59,12 +67,12 @@ struct ChangePasswordPage {
         Text('修改密码')
           .fontSize(24)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#333333')
+          .fontColor('#1f477d')
           .margin({ top: 60 })
 
         Text('首次登录需要修改临时密码')
           .fontSize(14)
-          .fontColor('#666666')
+          .fontColor('#7d90a8')
           .margin({ top: 8 })
       }
       .width('100%')
@@ -73,12 +81,12 @@ struct ChangePasswordPage {
 
       // 输入表单
       Column() {
-        TextInput({ placeholder: '当前密码（临时密码）' })
+        TextInput({ placeholder: '请输入当前密码' })
           .width('100%')
           .height(48)
           .fontSize(16)
           .type(InputType.Password)
-          .backgroundColor('#F5F5F5')
+          .backgroundColor('#f7f9fc')
           .borderRadius(8)
           .padding({ left: 16, right: 16 })
           .onChange((value: string) => {
@@ -87,12 +95,12 @@ struct ChangePasswordPage {
           })
           .margin({ bottom: 16 })
 
-        TextInput({ placeholder: '新密码（至少6个字符）' })
+        TextInput({ placeholder: '6-72 个字符' })
           .width('100%')
           .height(48)
           .fontSize(16)
           .type(InputType.Password)
-          .backgroundColor('#F5F5F5')
+          .backgroundColor('#f7f9fc')
           .borderRadius(8)
           .padding({ left: 16, right: 16 })
           .onChange((value: string) => {
@@ -101,12 +109,12 @@ struct ChangePasswordPage {
           })
           .margin({ bottom: 16 })
 
-        TextInput({ placeholder: '确认新密码' })
+        TextInput({ placeholder: '再次输入新密码' })
           .width('100%')
           .height(48)
           .fontSize(16)
           .type(InputType.Password)
-          .backgroundColor('#F5F5F5')
+          .backgroundColor('#f7f9fc')
           .borderRadius(8)
           .padding({ left: 16, right: 16 })
           .onChange((value: string) => {
@@ -120,20 +128,26 @@ struct ChangePasswordPage {
 
       // 错误提示
       if (this.errorMessage) {
-        Text(this.errorMessage)
-          .fontSize(14)
-          .fontColor('#E53935')
-          .margin({ top: 8, bottom: 8 })
-          .width('85%')
+        Row() {
+          Text(this.errorMessage)
+            .fontSize(14)
+            .fontColor('#b42318')
+        }
+        .width('85%')
+        .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+        .backgroundColor('#fee2e2')
+        .borderRadius(8)
+        .margin({ top: 8, bottom: 8 })
       }
 
       // 修改密码按钮
-      Button(this.isLoading ? '提交中...' : '修改密码')
+      Button(this.isLoading ? '提交中...' : '确认修改')
         .width('85%')
         .height(48)
         .fontSize(16)
         .fontWeight(FontWeight.Medium)
-        .backgroundColor('#1A73E8')
+        .backgroundColor('#1f477d')
+        .fontColor('#ffffff')
         .borderRadius(8)
         .enabled(!this.isLoading)
         .margin({ top: 16 })
@@ -143,6 +157,6 @@ struct ChangePasswordPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#FFFFFF')
+    .backgroundColor('#f2f5f9')
   }
 }

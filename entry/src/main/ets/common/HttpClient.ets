@@ -2,11 +2,18 @@ import { http } from '@kit.NetworkKit';
 import { ApiConfig } from './ApiConfig';
 import { ApiError } from './ApiError';
 import { buffer } from '@kit.ArkTS';
+import { fileIo as fs } from '@kit.CoreFileKit';
 
-interface FileUploadData {
-  name: string;
-  type: string;
+export interface MultipartUploadFile {
+  fieldName: string;
   uri: string;
+  fileName: string;
+  contentType: string;
+}
+
+interface NativeErrorDetail {
+  code?: number;
+  message?: string;
 }
 
 export class HttpClient {
@@ -103,40 +110,54 @@ export class HttpClient {
     return this.request<T>('PATCH', path, body, 'application/json');
   }
 
-  async uploadFile<T>(path: string, fileUri: string, fileName: string, fileType: string,
-    extraFields?: Record<string, string>): Promise<T> {
+  async uploadFiles<T>(path: string, files: MultipartUploadFile[], cacheDir: string,
+    extraFields?: Record<string, string>, onStage?: (stage: string) => void): Promise<T> {
     const baseUrl = ApiConfig.getInstance().baseUrl;
     const url = `${baseUrl}${path}`;
-    const headers: Record<string, string> = {};
-    const token = this.tokenManager.getToken();
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = this.buildHeaders('multipart/form-data');
+    const temporaryPaths: string[] = [];
+    let httpRequest: http.HttpRequest | null = null;
+    let preparingFiles: boolean = true;
 
     try {
-      const httpRequest = http.createHttp();
+      const formData: http.MultiFormData[] = [];
+      for (let index = 0; index < files.length; index++) {
+        const file = files[index];
+        onStage?.(`正在准备文件 ${index + 1}/${files.length}…`);
+        const safeName = file.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const temporaryPath = `${cacheDir}/btir-upload-${Date.now()}-${index}-${safeName}`;
+        const source = await fs.open(file.uri, fs.OpenMode.READ_ONLY);
+        try {
+          temporaryPaths.push(temporaryPath);
+          await fs.copyFile(source.fd, temporaryPath);
+        } finally {
+          await fs.close(source);
+        }
+        formData.push({
+          name: file.fieldName,
+          contentType: file.contentType,
+          remoteFileName: file.fileName,
+          filePath: temporaryPath,
+        });
+      }
+      if (extraFields) {
+        for (const key of Object.keys(extraFields)) {
+          formData.push({ name: key, contentType: 'text/plain', data: extraFields[key] });
+        }
+      }
+
+      httpRequest = http.createHttp();
       const options: http.HttpRequestOptions = {
         method: http.RequestMethod.POST,
         header: headers,
         expectDataType: http.HttpDataType.STRING,
+        multiFormDataList: formData,
+        connectTimeout: 30000,
+        readTimeout: 600000,
       };
-
-      const formData: Record<string, Object> = {};
-      const archiveFile: FileUploadData = {
-        name: fileName,
-        type: fileType,
-        uri: fileUri,
-      };
-      formData['archive'] = archiveFile;
-      if (extraFields) {
-        for (const key of Object.keys(extraFields)) {
-          formData[key] = extraFields[key];
-        }
-      }
-      options.extraData = formData;
-
+      preparingFiles = false;
+      onStage?.('正在上传并等待服务器处理…');
       const response = await httpRequest.request(url, options);
-      httpRequest.destroy();
 
       const status = response.responseCode;
       const responseText = response.result as string;
@@ -156,7 +177,22 @@ export class HttpClient {
       if (error instanceof ApiError) {
         throw error;
       }
-      throw new ApiError(0, String(error), `文件上传失败: ${String(error)}`);
+      const prefix = preparingFiles ? '读取所选文件失败' : '网络上传失败';
+      const detail = error as NativeErrorDetail;
+      const code = detail && detail.code !== undefined ? `（错误码 ${detail.code}）` : '';
+      const message = detail && detail.message ? detail.message : String(error);
+      throw new ApiError(0, message, `${prefix}${code}：${message}`);
+    } finally {
+      if (httpRequest) {
+        httpRequest.destroy();
+      }
+      for (const path of temporaryPaths) {
+        try {
+          await fs.unlink(path);
+        } catch (error) {
+          // 缓存文件可能尚未创建成功。
+        }
+      }
     }
   }
 

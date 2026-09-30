@@ -1,6 +1,6 @@
 import { HttpClient, TokenManager } from '../common/HttpClient';
 import { ApiError } from '../common/ApiError';
-import { AuthResponse, UserInfoResponse, ChangePasswordRequest, LoginRequest } from '../model/AuthModels';
+import { AuthResponse, UserInfoResponse, ChangePasswordRequest, LoginRequest, RegisterRequest } from '../model/AuthModels';
 
 export class AuthService {
   private httpClient: HttpClient = HttpClient.getInstance();
@@ -8,6 +8,19 @@ export class AuthService {
   async login(username: string, password: string): Promise<AuthResponse> {
     const request: LoginRequest = { username, password };
     const response = await this.httpClient.post<AuthResponse>('/auth/login', request);
+    TokenManager.getInstance().setAuth(
+      response.access_token,
+      response.user_id,
+      response.username,
+      response.role,
+      response.must_change_password
+    );
+    return response;
+  }
+
+  async register(username: string, password: string): Promise<AuthResponse> {
+    const request: RegisterRequest = { username, password };
+    const response = await this.httpClient.post<AuthResponse>('/auth/register', request);
     TokenManager.getInstance().setAuth(
       response.access_token,
       response.user_id,

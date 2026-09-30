@@ -1,6 +1,7 @@
 import { router } from '@kit.ArkUI';
 import { picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
+import { deviceInfo } from '@kit.BasicServicesKit';
 import { TaskService, UploadArchiveOptions } from '../service/TaskService';
 import { ApiError } from '../common/ApiError';
 import { TokenManager } from '../common/HttpClient';
@@ -222,6 +223,14 @@ struct UploadPage {
             .fontColor('#586b82')
             .width('100%')
             .margin({ bottom: 16 })
+
+          if (deviceInfo.productModel.toLowerCase() === 'emulator') {
+            Text('模拟器上传经本机转发到服务器；请先运行 btir-phone start。电脑到服务器使用 HTTPS。')
+              .fontSize(12)
+              .fontColor('#586b82')
+              .width('100%')
+              .margin({ bottom: 12 })
+          }
 
           // 上传模式切换
           Row() {

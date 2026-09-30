@@ -3,6 +3,7 @@ import { ApiConfig } from './ApiConfig';
 import { ApiError } from './ApiError';
 import { buffer } from '@kit.ArkTS';
 import { fileIo as fs } from '@kit.CoreFileKit';
+import { deviceInfo } from '@kit.BasicServicesKit';
 
 export interface MultipartUploadFile {
   fieldName: string;
@@ -12,7 +13,7 @@ export interface MultipartUploadFile {
 }
 
 interface NativeErrorDetail {
-  code?: number;
+  code?: number | string;
   message?: string;
 }
 
@@ -41,6 +42,23 @@ export class HttpClient {
       headers['Content-Type'] = contentType;
     }
     return headers;
+  }
+
+  private async emulatorUploadBridgeReady(): Promise<boolean> {
+    const probe = http.createHttp();
+    try {
+      const response = await probe.request('http://10.0.2.2:18766/healthz', {
+        method: http.RequestMethod.GET,
+        connectTimeout: 3000,
+        readTimeout: 3000,
+      });
+      return response.responseCode === 200 &&
+        (response.result as string).includes('btir-emulator-upload-bridge');
+    } catch (error) {
+      return false;
+    } finally {
+      probe.destroy();
+    }
   }
 
   async request<T>(method: string, path: string, body?: Object, contentType?: string): Promise<T> {
@@ -113,11 +131,15 @@ export class HttpClient {
   async uploadFiles<T>(path: string, files: MultipartUploadFile[], cacheDir: string,
     extraFields?: Record<string, string>, onStage?: (stage: string) => void): Promise<T> {
     const baseUrl = ApiConfig.getInstance().baseUrl;
-    const url = `${baseUrl}${path}`;
-    const headers = this.buildHeaders('multipart/form-data');
+    let url = `${baseUrl}${path}`;
+    const headers = this.buildHeaders();
     const temporaryPaths: string[] = [];
     let httpRequest: http.HttpRequest | null = null;
     let preparingFiles: boolean = true;
+    let uploadedBytes: number = 0;
+    let uploadTotalBytes: number = 0;
+    let lastProgressPercent: number = -1;
+    let bodyBytes: number = 0;
 
     try {
       const formData: http.MultiFormData[] = [];
@@ -133,6 +155,7 @@ export class HttpClient {
         } finally {
           await fs.close(source);
         }
+        bodyBytes += (await fs.stat(temporaryPath)).size;
         formData.push({
           name: file.fieldName,
           contentType: file.contentType,
@@ -146,7 +169,35 @@ export class HttpClient {
         }
       }
 
+      // 正式服务的代理对整个 multipart 请求限制为 512 MiB，预留表单头部空间。
+      if (bodyBytes + 64 * 1024 >= 512 * 1024 * 1024) {
+        throw new ApiError(413, '文件过大', '文件总大小已接近服务器 512 MiB 上传上限，请压缩或拆分后重试');
+      }
+
+      let viaBridge = false;
+      if (deviceInfo.productModel.toLowerCase() === 'emulator' &&
+        baseUrl === 'https://btir-online.ai-premol.cn') {
+        onStage?.('正在检查模拟器上传服务…');
+        if (!(await this.emulatorUploadBridgeReady())) {
+          throw new ApiError(0, '模拟器上传服务不可用',
+            '请在电脑终端运行 btir-phone start，再重试上传。');
+        }
+        url = `http://10.0.2.2:18766${path}`;
+        viaBridge = true;
+      }
+
       httpRequest = http.createHttp();
+      httpRequest.on('dataSendProgress', (progress: http.DataSendProgressInfo) => {
+        uploadedBytes += progress.sendSize;
+        uploadTotalBytes = progress.totalSize;
+        if (uploadTotalBytes > 0) {
+          const percent = Math.min(100, Math.floor(uploadedBytes * 100 / uploadTotalBytes));
+          if (percent >= lastProgressPercent + 5 || percent === 100) {
+            lastProgressPercent = percent;
+            onStage?.(percent < 100 ? `正在上传 ${percent}%…` : '上传完成，等待服务器处理…');
+          }
+        }
+      });
       const options: http.HttpRequestOptions = {
         method: http.RequestMethod.POST,
         header: headers,
@@ -156,7 +207,7 @@ export class HttpClient {
         readTimeout: 600000,
       };
       preparingFiles = false;
-      onStage?.('正在上传并等待服务器处理…');
+      onStage?.(viaBridge ? '正在通过电脑转发上传…' : '正在上传并等待服务器处理…');
       const response = await httpRequest.request(url, options);
 
       const status = response.responseCode;
@@ -181,6 +232,12 @@ export class HttpClient {
       const detail = error as NativeErrorDetail;
       const code = detail && detail.code !== undefined ? `（错误码 ${detail.code}）` : '';
       const message = detail && detail.message ? detail.message : String(error);
+      if (detail && Number(detail.code) === 23000056) {
+        const progressText = uploadTotalBytes > 0
+          ? `（已发送 ${Math.min(100, Math.floor(uploadedBytes * 100 / uploadTotalBytes))}%）` : '';
+        throw new ApiError(0, message,
+          `上传连接中断${progressText}。请确认 btir-phone start 已运行后重试。错误码 23000056`);
+      }
       throw new ApiError(0, message, `${prefix}${code}：${message}`);
     } finally {
       if (httpRequest) {

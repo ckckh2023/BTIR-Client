@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_path=$(readlink -f "${BASH_SOURCE[0]}")
+project_dir=$(dirname "$(dirname "$script_path")")
+emulator="$HOME/.local/share/harmonyos/command-line-tools/bin/Emulator"
+hdc="$HOME/.local/share/harmonyos/command-line-tools/sdk/default/openharmony/toolchains/hdc"
+instances="$HOME/.local/share/harmonyos/emulator-instances"
+images="$HOME/.local/share/harmonyos/emulator-images"
+log_dir="$HOME/.local/share/harmonyos"
+target="127.0.0.1:5555"
+bridge_url="http://127.0.0.1:18766/healthz"
+bridge_unit="btir-emulator-upload-bridge.service"
+
+bridge_ready() {
+  curl --noproxy '*' -fsS --max-time 2 "$bridge_url" 2>/dev/null | grep -Fq 'btir-emulator-upload-bridge'
+}
+
+start_bridge() {
+  mkdir -p "$log_dir"
+  if bridge_ready; then
+    return
+  fi
+  systemctl --user reset-failed "$bridge_unit" >/dev/null 2>&1 || true
+  systemd-run --user --unit="${bridge_unit%.service}" --collect \
+    --property=Restart=on-failure \
+    /usr/bin/python3 "$project_dir/tools/emulator_upload_bridge.py" >/dev/null
+  for ((attempt = 0; attempt < 20; attempt++)); do
+    if bridge_ready; then
+      return
+    fi
+    sleep 0.2
+  done
+  echo "上传服务启动失败，请查看 journalctl --user -u $bridge_unit" >&2
+  exit 1
+}
+
+is_ready() {
+  "$hdc" list targets | grep -Fqx "$target"
+}
+
+case "${1:-start}" in
+  start)
+    start_bridge
+    if ! is_ready; then
+      echo "正在启动鸿蒙手机模拟器…"
+      nohup "$emulator" -start BTIR_Phone -instancePath "$instances" -imageRoot "$images" >"$log_dir/btir-phone.log" 2>&1 </dev/null &
+    fi
+    for ((attempt = 0; attempt < 90; attempt++)); do
+      if is_ready; then
+        result=$("$hdc" -t "$target" shell aa start -a EntryAbility -b cn.aipremol.btir.client 2>&1)
+        if [[ "$result" != *"start ability successfully"* ]]; then
+          echo "BTIR 启动失败：$result" >&2
+          exit 1
+        fi
+        echo "BTIR 已在模拟器中启动，上传服务已就绪。"
+        exit 0
+      fi
+      sleep 2
+    done
+    echo "模拟器未能在 3 分钟内连接；请查看 $log_dir/btir-phone.log" >&2
+    exit 1
+    ;;
+  stop)
+    "$emulator" -stop BTIR_Phone -instancePath "$instances"
+    systemctl --user stop "$bridge_unit" >/dev/null 2>&1 || true
+    ;;
+  status)
+    if is_ready; then
+      echo "BTIR_Phone 已连接。"
+    else
+      echo "BTIR_Phone 未连接。"
+    fi
+    if bridge_ready; then
+      echo "上传服务已就绪。"
+    else
+      echo "上传服务未运行。"
+    fi
+    ;;
+  *)
+    echo "用法：btir-phone [start|stop|status]" >&2
+    exit 2
+    ;;
+esac

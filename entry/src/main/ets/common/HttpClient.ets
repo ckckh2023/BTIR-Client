@@ -12,6 +12,17 @@ export interface MultipartUploadFile {
   contentType: string;
 }
 
+interface BridgeFileInfo {
+  fieldName: string;
+  fileName: string;
+  contentType: string;
+  size: number;
+}
+
+interface BridgeSessionResponse {
+  sessionId: string;
+}
+
 interface NativeErrorDetail {
   code?: number | string;
   message?: string;
@@ -58,6 +69,118 @@ export class HttpClient {
       return false;
     } finally {
       probe.destroy();
+    }
+  }
+
+  private async verifyZipFooter(path: string, size: number): Promise<void> {
+    if (size < 22) {
+      throw new ApiError(400, 'ZIP 文件不完整', '所选 ZIP 文件不完整，请重新导入后再试');
+    }
+    const file = await fs.open(path, fs.OpenMode.READ_ONLY);
+    try {
+      const length = Math.min(size, 65557);
+      const tail = new ArrayBuffer(length);
+      const count = fs.readSync(file.fd, tail, { offset: size - length, length: length });
+      const bytes = new Uint8Array(tail);
+      for (let index = count - 22; index >= 0; index--) {
+        if (bytes[index] === 0x50 && bytes[index + 1] === 0x4b &&
+          bytes[index + 2] === 0x05 && bytes[index + 3] === 0x06) {
+          const commentLength = bytes[index + 20] | (bytes[index + 21] << 8);
+          if (index + 22 + commentLength === count) {
+            return;
+          }
+        }
+      }
+    } finally {
+      await fs.close(file);
+    }
+    throw new ApiError(400, 'ZIP 文件不完整', '所选 ZIP 文件缺少结束目录，请重新导入后再试');
+  }
+
+  private async bridgeRequest<T>(path: string, data?: string | ArrayBuffer,
+    headers: Record<string, string> = {}): Promise<T> {
+    const request = http.createHttp();
+    try {
+      const options: http.HttpRequestOptions = {
+        method: http.RequestMethod.POST,
+        header: headers,
+        expectDataType: http.HttpDataType.STRING,
+        connectTimeout: 30000,
+        readTimeout: 600000,
+      };
+      if (data !== undefined) {
+        options.extraData = data;
+      }
+      const response = await request.request(`http://10.0.2.2:18766${path}`, options);
+      const status = response.responseCode;
+      const responseText = response.result as string;
+      let responseData: Object | string = responseText;
+      try {
+        responseData = JSON.parse(responseText);
+      } catch (error) {
+        // 空响应和非 JSON 错误交给状态码处理。
+      }
+      if (status >= 400) {
+        throw new ApiError(status, responseData);
+      }
+      return responseData as T;
+    } finally {
+      request.destroy();
+    }
+  }
+
+  private async uploadViaBridge<T>(path: string, files: BridgeFileInfo[], paths: string[],
+    fields: Record<string, string>, onStage?: (stage: string) => void): Promise<T> {
+    let sessionId = '';
+    let sentBytes = 0;
+    const totalBytes = files.reduce((total, file) => total + file.size, 0);
+    try {
+      const session = await this.bridgeRequest<BridgeSessionResponse>(
+        '/stream/start', JSON.stringify({ path: path, files: files, fields: fields }),
+        this.buildHeaders('application/json')
+      );
+      sessionId = session.sessionId;
+      if (!sessionId) {
+        throw new ApiError(0, '上传会话无效', '电脑上传服务未返回有效会话');
+      }
+      for (let index = 0; index < paths.length; index++) {
+        const file = await fs.open(paths[index], fs.OpenMode.READ_ONLY);
+        try {
+          let remaining = files[index].size;
+          while (remaining > 0) {
+            const block = new ArrayBuffer(Math.min(1024 * 1024, remaining));
+            const count = fs.readSync(file.fd, block);
+            if (count <= 0) {
+              throw new ApiError(0, '文件读取中断', '读取所选文件时中断，请重新选择后重试');
+            }
+            const data = count === block.byteLength ? block : block.slice(0, count);
+            await this.bridgeRequest<void>(`/stream/chunk/${sessionId}/${index}`, data, {
+              'Content-Type': 'application/octet-stream',
+              'Content-Length': String(count),
+            });
+            remaining -= count;
+            sentBytes += count;
+            const percent = totalBytes > 0 ? Math.floor(sentBytes * 100 / totalBytes) : 100;
+            onStage?.(`正在上传 ${Math.min(percent, 100)}%…`);
+          }
+        } finally {
+          await fs.close(file);
+        }
+      }
+      onStage?.('上传完成，等待服务器处理…');
+      return await this.bridgeRequest<T>(`/stream/finish/${sessionId}`);
+    } catch (error) {
+      if (sessionId) {
+        try {
+          await this.bridgeRequest<void>(`/stream/abort/${sessionId}`);
+        } catch (abortError) {
+          // 会话可能已经结束，原始错误更有用。
+        }
+      }
+      if (error instanceof ApiError) {
+        throw error;
+      }
+      throw new Error(String(error));
     }
   }
 
@@ -132,7 +255,7 @@ export class HttpClient {
     extraFields?: Record<string, string>, onStage?: (stage: string) => void): Promise<T> {
     const baseUrl = ApiConfig.getInstance().baseUrl;
     let url = `${baseUrl}${path}`;
-    const headers = this.buildHeaders();
+    const headers = this.buildHeaders('multipart/form-data');
     const temporaryPaths: string[] = [];
     let httpRequest: http.HttpRequest | null = null;
     let preparingFiles: boolean = true;
@@ -143,6 +266,7 @@ export class HttpClient {
 
     try {
       const formData: http.MultiFormData[] = [];
+      const bridgeFiles: BridgeFileInfo[] = [];
       for (let index = 0; index < files.length; index++) {
         const file = files[index];
         onStage?.(`正在准备文件 ${index + 1}/${files.length}…`);
@@ -155,7 +279,17 @@ export class HttpClient {
         } finally {
           await fs.close(source);
         }
-        bodyBytes += (await fs.stat(temporaryPath)).size;
+        const fileSize = (await fs.stat(temporaryPath)).size;
+        if (file.fieldName === 'archive' && file.fileName.toLowerCase().endsWith('.zip')) {
+          await this.verifyZipFooter(temporaryPath, fileSize);
+        }
+        bodyBytes += fileSize;
+        bridgeFiles.push({
+          fieldName: file.fieldName,
+          fileName: file.fileName,
+          contentType: file.contentType,
+          size: fileSize,
+        });
         formData.push({
           name: file.fieldName,
           contentType: file.contentType,
@@ -163,12 +297,6 @@ export class HttpClient {
           filePath: temporaryPath,
         });
       }
-      if (extraFields) {
-        for (const key of Object.keys(extraFields)) {
-          formData.push({ name: key, contentType: 'text/plain', data: extraFields[key] });
-        }
-      }
-
       // 正式服务的代理对整个 multipart 请求限制为 512 MiB，预留表单头部空间。
       if (bodyBytes + 64 * 1024 >= 512 * 1024 * 1024) {
         throw new ApiError(413, '文件过大', '文件总大小已接近服务器 512 MiB 上传上限，请压缩或拆分后重试');
@@ -184,6 +312,23 @@ export class HttpClient {
         }
         url = `http://10.0.2.2:18766${path}`;
         viaBridge = true;
+      }
+
+      if (extraFields) {
+        if (viaBridge) {
+          // 模拟器的原生 multipart 上传会把文件末尾变成零；改由本机服务
+          // 接收原始文件分块并流式组装表单。
+        } else {
+          for (const key of Object.keys(extraFields)) {
+            formData.push({ name: key, contentType: 'text/plain', data: extraFields[key] });
+          }
+        }
+      }
+
+      if (viaBridge) {
+        preparingFiles = false;
+        onStage?.('正在通过电脑转发上传…');
+        return await this.uploadViaBridge<T>(path, bridgeFiles, temporaryPaths, extraFields ?? {}, onStage);
       }
 
       httpRequest = http.createHttp();

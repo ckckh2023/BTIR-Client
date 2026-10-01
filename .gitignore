@@ -3,3 +3,4 @@
 /entry/build
 /build
 /oh-package-lock.json5
+/tools/__pycache__/

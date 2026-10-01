@@ -72,6 +72,8 @@ export interface TaskSummaryResponse {
   input: TaskInputData;
   job?: TaskJobData;
   error?: TaskErrorData;
+  archived_at?: string;
+  purge_eligible_at?: string;
 }
 
 export interface TaskListResponse {
@@ -123,7 +125,17 @@ export interface SegmentationResult {
   spatial?: Record<string, Object>;
   labels?: Record<string, Object>;
   regions?: Record<string, RegionInfo>;
+  composites?: Record<string, CompositeRegionInfo>;
+  morphology?: SegmentationMorphology;
   mask_file?: string;
+}
+
+export interface CompositeRegionInfo {
+  volume_mm3?: number;
+}
+
+export interface SegmentationMorphology {
+  max_axial_area_mm2?: number;
 }
 
 export interface RegionInfo {

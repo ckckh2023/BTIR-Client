@@ -6,6 +6,7 @@
     "pages/UploadPage",
     "pages/TaskDetailPage",
     "pages/TaskListPage",
-    "pages/ModalitySelectPage"
+    "pages/ModalitySelectPage",
+    "pages/ReportExportPage"
   ]
 }

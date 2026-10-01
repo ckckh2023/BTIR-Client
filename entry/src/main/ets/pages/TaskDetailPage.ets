@@ -9,7 +9,18 @@ import {
   SegmentationResult,
   ModelConsensus,
   SupplementaryAnalysis,
+  FrontendResult,
+  TaskFollowUpResponse,
+  TaskFollowUpHistoryItem,
 } from '../model/TaskModels';
+
+interface FollowUpMetric {
+  key: string;
+  label: string;
+  baseline: string;
+  current: string;
+  change: string;
+}
 
 @Entry
 @Component
@@ -23,6 +34,11 @@ struct TaskDetailPage {
   @State isCancelling: boolean = false;
   @State isRetrying: boolean = false;
   @State isStarting: boolean = false;
+  @State followUp: TaskFollowUpResponse | null = null;
+  @State followUpLoading: boolean = false;
+  @State followUpError: string = '';
+  @State selectedFollowUpTaskId: string = '';
+  private followUpLoadedFor: string = '';
 
   private taskService: TaskService = new TaskService();
 
@@ -66,6 +82,10 @@ struct TaskDetailPage {
         this.stopPolling();
         if (response.status === 'succeeded' || response.status === 'partial') {
           this.loadPreviewImages(response);
+          if (response.case_id && this.followUpLoadedFor !== response.task_id) {
+            this.followUpLoadedFor = response.task_id;
+            this.loadFollowUp(response.task_id);
+          }
         }
       } else if (this.pollTimerId === -1) {
         this.startPolling();
@@ -132,6 +152,102 @@ struct TaskDetailPage {
   arrayBufferToBase64(bufferData: ArrayBuffer): string {
     const buf = buffer.from(bufferData);
     return buf.toString('base64');
+  }
+
+  private async loadFollowUp(taskId: string): Promise<void> {
+    this.followUpLoadedFor = taskId;
+    this.followUpLoading = true;
+    this.followUpError = '';
+    try {
+      const response = await this.taskService.getFollowUp(taskId);
+      if (taskId !== this.taskId) return;
+      this.followUp = response;
+      this.selectedFollowUpTaskId = response.baseline?.task_id ||
+        (response.history.length > 0 ? response.history[0].task.task_id : '');
+    } catch (error) {
+      if (error instanceof ApiError && error.isTokenExpired()) {
+        TokenManager.getInstance().clearAuth();
+        router.replaceUrl({ url: 'pages/LoginPage' });
+        return;
+      }
+      this.followUpError = `读取随访记录失败：${error instanceof ApiError ? error.message : String(error)}`;
+      this.followUpLoadedFor = '';
+    } finally {
+      this.followUpLoading = false;
+    }
+  }
+
+  private startFollowUp(): void {
+    if (!this.task) return;
+    router.pushUrl({
+      url: 'pages/UploadPage',
+      params: {
+        followUp: 'true',
+        caseId: this.task.case_id || this.task.task_id,
+        caseName: this.task.case_name || this.task.name || '当前病例'
+      }
+    });
+  }
+
+  private selectedFollowUp(): TaskFollowUpHistoryItem | null {
+    if (!this.followUp || this.followUp.history.length === 0) return null;
+    for (const item of this.followUp.history) {
+      if (item.task.task_id === this.selectedFollowUpTaskId) return item;
+    }
+    return this.followUp.history[0];
+  }
+
+  private validValue(value?: number): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
+  }
+
+  private volumeValue(result: FrontendResult | undefined, key: string): number | undefined {
+    return this.validValue(result?.segmentation?.composites?.[key]?.volume_mm3);
+  }
+
+  private areaValue(result: FrontendResult | undefined): number | undefined {
+    return this.validValue(result?.segmentation?.morphology?.max_axial_area_mm2);
+  }
+
+  private probabilityValue(result: FrontendResult | undefined): number | undefined {
+    return this.validValue(result?.classification?.probabilities?.['yes']);
+  }
+
+  private appendMetric(metrics: FollowUpMetric[], key: string, label: string,
+    unit: string, baselineValue?: number, currentValue?: number): void {
+    if (baselineValue === undefined || currentValue === undefined) return;
+    const delta = currentValue - baselineValue;
+    const sign = delta > 0 ? '+' : '';
+    const percent = baselineValue > 0 ? ` · ${sign}${(delta / baselineValue * 100).toFixed(1)}%` : '';
+    const probability = unit === 'probability';
+    const suffix = unit === 'area' ? ' mm²' : ' mm³';
+    metrics.push({
+      key: key,
+      label: label,
+      baseline: probability ? `${(baselineValue * 100).toFixed(1)}%` : `${baselineValue.toFixed(1)}${suffix}`,
+      current: probability ? `${(currentValue * 100).toFixed(1)}%` : `${currentValue.toFixed(1)}${suffix}`,
+      change: probability ? `${sign}${(delta * 100).toFixed(1)} 个百分点${percent}` :
+        `${sign}${delta.toFixed(1)}${suffix}${percent}`
+    });
+  }
+
+  private followUpMetrics(): FollowUpMetric[] {
+    const selected = this.selectedFollowUp();
+    const current = this.task?.frontend_result;
+    if (!selected || !current) return [];
+    const baseline = selected.frontend_result;
+    const metrics: FollowUpMetric[] = [];
+    this.appendMetric(metrics, 'wt', '全肿瘤体积', 'volume',
+      this.volumeValue(baseline, 'WT'), this.volumeValue(current, 'WT'));
+    this.appendMetric(metrics, 'tc', '肿瘤核心体积', 'volume',
+      this.volumeValue(baseline, 'TC'), this.volumeValue(current, 'TC'));
+    this.appendMetric(metrics, 'et', '强化肿瘤体积', 'volume',
+      this.volumeValue(baseline, 'ET'), this.volumeValue(current, 'ET'));
+    this.appendMetric(metrics, 'area', '最大横截面积', 'area',
+      this.areaValue(baseline), this.areaValue(current));
+    this.appendMetric(metrics, 'probability', '肿瘤相关概率', 'probability',
+      this.probabilityValue(baseline), this.probabilityValue(current));
+    return metrics;
   }
 
   getStatusColor(status: string): string {
@@ -363,9 +479,6 @@ struct TaskDetailPage {
 
         Blank()
 
-        Text(this.taskId)
-          .fontSize(12)
-          .fontColor('#7d90a8')
       }
       .width('100%')
       .height(56)
@@ -409,6 +522,23 @@ struct TaskDetailPage {
               }
               .width('100%')
               .margin({ bottom: 8 })
+
+              if (this.task!.status === 'succeeded' || this.task!.status === 'partial') {
+                Button('查看与导出报告')
+                  .width('100%')
+                  .height(40)
+                  .fontSize(14)
+                  .backgroundColor('#1f477d')
+                  .fontColor('#ffffff')
+                  .borderRadius(8)
+                  .margin({ bottom: 8 })
+                  .onClick(() => {
+                    router.pushUrl({
+                      url: 'pages/ReportExportPage',
+                      params: { taskId: this.taskId }
+                    });
+                  })
+              }
 
               if (this.task!.status === 'created') {
                 Text('病例已上传，等待启动分析')
@@ -483,11 +613,9 @@ struct TaskDetailPage {
               // 失败/取消状态操作
               if (this.task!.status === 'failed' || this.task!.status === 'canceled') {
                 if (this.task!.error) {
-                  Row() {
-                    Text(`错误: ${this.task!.error.message}`)
-                      .fontSize(14)
-                      .fontColor('#b42318')
-                  }
+                  Text(`错误: ${this.task!.error.message}`)
+                    .fontSize(14)
+                    .fontColor('#b42318')
                   .width('100%')
                   .padding({ left: 12, right: 12, top: 8, bottom: 8 })
                   .backgroundColor('#fee2e2')
@@ -535,6 +663,10 @@ struct TaskDetailPage {
               this.SupplementaryCard(this.task!.frontend_result.supplementary_analysis)
             }
 
+            if (this.task!.status === 'succeeded' || this.task!.status === 'partial') {
+              this.FollowUpCard()
+            }
+
             // 预览图片
             if (Object.keys(this.previewImageUris).length > 0) {
               this.PreviewCard()
@@ -550,16 +682,14 @@ struct TaskDetailPage {
 
       // 错误提示
       if (this.errorMessage) {
-        Row() {
-          Text(this.errorMessage)
-            .fontSize(14)
-            .fontColor('#b42318')
-        }
-        .width('90%')
-        .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-        .backgroundColor('#fee2e2')
-        .borderRadius(8)
-        .margin({ bottom: 8 })
+        Text(this.errorMessage)
+          .fontSize(14)
+          .fontColor('#b42318')
+          .width('90%')
+          .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+          .backgroundColor('#fee2e2')
+          .borderRadius(8)
+          .margin({ bottom: 8 })
 
         Button('刷新任务状态')
           .width('90%')
@@ -669,14 +799,12 @@ struct TaskDetailPage {
         .margin({ bottom: 12 })
 
       // 分类结论
-      Row() {
-        Text(classification.class === 'yes' ? '提示肿瘤相关异常' : '未发现明显异常')
-          .fontSize(18)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(classification.class === 'yes' ? '#b42318' : '#18794e')
-      }
-      .width('100%')
-      .margin({ bottom: 8 })
+      Text(classification.class === 'yes' ? '提示肿瘤相关异常' : '未发现明显异常')
+        .fontSize(18)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(classification.class === 'yes' ? '#b42318' : '#18794e')
+        .width('100%')
+        .margin({ bottom: 8 })
 
       // 置信度
       Row() {
@@ -725,16 +853,14 @@ struct TaskDetailPage {
 
       // 实验性提示
       if (classification.experimental) {
-        Row() {
-          Text('此分类结果为实验性辅助分析，不作为确定诊断依据')
-            .fontSize(12)
-            .fontColor('#b45309')
-        }
-        .width('100%')
-        .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-        .backgroundColor('#fef3c7')
-        .borderRadius(6)
-        .margin({ top: 8 })
+        Text('此分类结果为实验性辅助分析，不作为确定诊断依据')
+          .fontSize(12)
+          .fontColor('#b45309')
+          .width('100%')
+          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+          .backgroundColor('#fef3c7')
+          .borderRadius(6)
+          .margin({ top: 8 })
       }
     }
     .width('100%')
@@ -780,16 +906,11 @@ struct TaskDetailPage {
       }
 
       if (segmentation.mask_file) {
-        Row() {
-          Text('分割掩码文件: ')
-            .fontSize(12)
-            .fontColor('#586b82')
-          Text(segmentation.mask_file)
-            .fontSize(12)
-            .fontColor('#1f477d')
-        }
-        .width('100%')
-        .margin({ top: 8 })
+        Text(`分割掩码文件: ${segmentation.mask_file}`)
+          .fontSize(12)
+          .fontColor('#1f477d')
+          .width('100%')
+          .margin({ top: 8 })
       }
     }
     .width('100%')
@@ -811,30 +932,20 @@ struct TaskDetailPage {
 
       if (supplementary.content) {
         if (supplementary.content.summary) {
-          Row() {
-            Text('结论: ')
-              .fontSize(14)
-              .fontColor('#586b82')
-            Text(supplementary.content.summary)
-              .fontSize(14)
-              .fontColor('#1e2d3e')
-              .fontWeight(FontWeight.Medium)
-          }
-          .width('100%')
-          .margin({ bottom: 8 })
+          Text(`结论: ${supplementary.content.summary}`)
+            .fontSize(14)
+            .fontColor('#1e2d3e')
+            .fontWeight(FontWeight.Medium)
+            .width('100%')
+            .margin({ bottom: 8 })
         }
 
         if (supplementary.content.follow_up) {
-          Row() {
-            Text('建议: ')
-              .fontSize(14)
-              .fontColor('#586b82')
-            Text(supplementary.content.follow_up)
-              .fontSize(14)
-              .fontColor('#1f477d')
-          }
-          .width('100%')
-          .margin({ bottom: 8 })
+          Text(`建议: ${supplementary.content.follow_up}`)
+            .fontSize(14)
+            .fontColor('#1f477d')
+            .width('100%')
+            .margin({ bottom: 8 })
         }
 
         if (supplementary.content.uncertainties && supplementary.content.uncertainties.length > 0) {
@@ -868,6 +979,113 @@ struct TaskDetailPage {
               .margin({ bottom: 2 })
           })
         }
+      }
+    }
+    .width('100%')
+    .padding(16)
+    .backgroundColor('#ffffff')
+    .borderRadius(12)
+    .margin({ bottom: 12 })
+  }
+
+  @Builder
+  FollowUpCard() {
+    Column() {
+      Text('随访对比')
+        .fontSize(16)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#1e2d3e')
+        .width('100%')
+        .margin({ bottom: 8 })
+
+      Button('新增复查')
+        .height(36)
+        .fontSize(13)
+        .backgroundColor('#e6edf5')
+        .fontColor('#1f477d')
+        .onClick(() => { this.startFollowUp(); })
+        .margin({ bottom: 10 })
+
+      if (this.followUpLoading) {
+        Text('正在读取同一病例的历史检查…')
+          .fontSize(13)
+          .fontColor('#586b82')
+          .width('100%')
+      } else if (this.followUpError) {
+        Text(this.followUpError)
+          .fontSize(13)
+          .fontColor('#b42318')
+          .width('100%')
+        Button('重试读取')
+          .height(32)
+          .fontSize(12)
+          .backgroundColor('#e6edf5')
+          .fontColor('#1f477d')
+          .margin({ top: 8 })
+          .onClick(() => { this.loadFollowUp(this.taskId); })
+      } else if (this.followUp && this.followUp.history.length > 0) {
+        Text('选择一份历史检查作为基线；数值变化为本次减去基线。')
+          .fontSize(12)
+          .fontColor('#586b82')
+          .width('100%')
+          .margin({ bottom: 8 })
+
+        ForEach(this.followUp.history, (item: TaskFollowUpHistoryItem) => {
+          Column() {
+            Text(item.task.study_date || item.task.created_at)
+              .fontSize(13)
+              .fontWeight(FontWeight.Medium)
+              .fontColor('#1e2d3e')
+              .width('100%')
+            Text(item.task.name || item.task.task_id)
+              .fontSize(12)
+              .fontColor('#586b82')
+              .width('100%')
+          }
+          .width('100%')
+          .padding(10)
+          .backgroundColor(this.selectedFollowUpTaskId === item.task.task_id ? '#dbeafe' : '#f7f9fc')
+          .borderRadius(8)
+          .margin({ bottom: 6 })
+          .onClick(() => { this.selectedFollowUpTaskId = item.task.task_id; })
+        }, (item: TaskFollowUpHistoryItem) => item.task.task_id)
+
+        if (this.followUpMetrics().length > 0) {
+          ForEach(this.followUpMetrics(), (metric: FollowUpMetric) => {
+            Column() {
+              Text(metric.label)
+                .fontSize(14)
+                .fontWeight(FontWeight.Bold)
+                .fontColor('#1e2d3e')
+                .width('100%')
+              Text(`基线 ${metric.baseline}  →  本次 ${metric.current}`)
+                .fontSize(13)
+                .fontColor('#586b82')
+                .width('100%')
+                .margin({ top: 4 })
+              Text(`变化 ${metric.change}`)
+                .fontSize(13)
+                .fontColor('#1f477d')
+                .width('100%')
+                .margin({ top: 4 })
+            }
+            .width('100%')
+            .padding(10)
+            .backgroundColor('#f7f9fc')
+            .borderRadius(8)
+            .margin({ top: 6 })
+          }, (metric: FollowUpMetric) => metric.key)
+        } else {
+          Text('当前与基线检查缺少可共同量化的结果。')
+            .fontSize(13)
+            .fontColor('#586b82')
+            .width('100%')
+        }
+      } else {
+        Text('该病例暂无已完成的历史检查，上传复查后可在这里对比。')
+          .fontSize(13)
+          .fontColor('#586b82')
+          .width('100%')
       }
     }
     .width('100%')
@@ -958,6 +1176,7 @@ struct TaskDetailPage {
         Text(this.task!.task_id)
           .fontSize(12)
           .fontColor('#1e2d3e')
+          .layoutWeight(1)
       }
       .width('100%')
       .margin({ bottom: 4 })
@@ -971,6 +1190,7 @@ struct TaskDetailPage {
           Text(this.task!.name)
             .fontSize(12)
             .fontColor('#1e2d3e')
+            .layoutWeight(1)
         }
         .width('100%')
         .margin({ bottom: 4 })
@@ -985,6 +1205,7 @@ struct TaskDetailPage {
           Text(this.task!.case_id)
             .fontSize(12)
             .fontColor('#1e2d3e')
+            .layoutWeight(1)
         }
         .width('100%')
         .margin({ bottom: 4 })
@@ -999,6 +1220,7 @@ struct TaskDetailPage {
           Text(this.task!.study_date)
             .fontSize(12)
             .fontColor('#1e2d3e')
+            .layoutWeight(1)
         }
         .width('100%')
         .margin({ bottom: 4 })
@@ -1012,6 +1234,7 @@ struct TaskDetailPage {
         Text(this.task!.created_at)
           .fontSize(12)
           .fontColor('#1e2d3e')
+          .layoutWeight(1)
       }
       .width('100%')
       .margin({ bottom: 4 })
@@ -1024,6 +1247,7 @@ struct TaskDetailPage {
         Text(this.task!.completed_models.join(', '))
           .fontSize(12)
           .fontColor('#1e2d3e')
+          .layoutWeight(1)
       }
       .width('100%')
     }

@@ -7,6 +7,7 @@ import {
   TaskCancellationResponse,
   TaskFollowUpResponse,
   TaskRunListResponse,
+  TaskSummaryResponse,
 } from '../model/TaskModels';
 
 interface RenameRequest {
@@ -148,9 +149,9 @@ export class TaskService {
     return this.httpClient.post<TaskCancellationResponse>(`/tasks/${taskId}/cancel`);
   }
 
-  async renameTask(taskId: string, name: string): Promise<Object> {
+  async renameTask(taskId: string, name: string): Promise<TaskSummaryResponse> {
     const request: RenameRequest = { name };
-    return this.httpClient.patch<Object>(`/tasks/${taskId}/rename`, request);
+    return this.httpClient.patch<TaskSummaryResponse>(`/tasks/${taskId}/rename`, request);
   }
 
   async deleteTask(taskId: string): Promise<Object> {
@@ -161,8 +162,16 @@ export class TaskService {
     return this.httpClient.post<Object>(`/tasks/${taskId}/restore`);
   }
 
-  async getArchivedTasks(limit: number = 20, offset: number = 0): Promise<TaskListResponse> {
-    return this.httpClient.get<TaskListResponse>(`/tasks/archived?limit=${limit}&offset=${offset}`);
+  async purgeTask(taskId: string): Promise<Object> {
+    return this.httpClient.delete<Object>(`/tasks/${taskId}/purge`);
+  }
+
+  async getArchivedTasks(limit: number = 20, offset: number = 0,
+    status?: string, q?: string): Promise<TaskListResponse> {
+    let path = `/tasks/archived?limit=${limit}&offset=${offset}`;
+    if (status) path += `&status=${encodeURIComponent(status)}`;
+    if (q) path += `&q=${encodeURIComponent(q)}`;
+    return this.httpClient.get<TaskListResponse>(path);
   }
 
   buildFilePath(taskId: string, filePath: string): string {

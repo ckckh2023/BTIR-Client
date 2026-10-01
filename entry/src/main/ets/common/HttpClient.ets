@@ -194,19 +194,20 @@ export class HttpClient {
       requestBody = JSON.stringify(body);
     }
 
+    const httpRequest = http.createHttp();
     try {
-      const httpRequest = http.createHttp();
       const options: http.HttpRequestOptions = {
         method: method as http.RequestMethod,
         header: headers,
         expectDataType: http.HttpDataType.STRING,
+        connectTimeout: 8000,
+        readTimeout: path.startsWith('/auth/') ? 12000 : 30000,
       };
       if (requestBody) {
         options.extraData = requestBody;
       }
 
       const response = await httpRequest.request(url, options);
-      httpRequest.destroy();
 
       const status = response.responseCode;
 
@@ -231,7 +232,14 @@ export class HttpClient {
       if (error instanceof ApiError) {
         throw error;
       }
-      throw new ApiError(0, String(error), `网络请求失败: ${String(error)}`);
+      const detail = error as NativeErrorDetail;
+      const code = detail && detail.code !== undefined ? `（错误码 ${detail.code}）` : '';
+      const message = detail && detail.message ? detail.message : '';
+      const diagnostic = message ? `：${message}` : '';
+      throw new ApiError(0, message || '网络连接失败',
+        `无法连接服务器${code}，请检查网络或稍后重试${diagnostic}`);
+    } finally {
+      httpRequest.destroy();
     }
   }
 

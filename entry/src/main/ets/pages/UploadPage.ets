@@ -229,6 +229,20 @@ struct UploadPage {
             .width('100%')
             .margin({ bottom: 16 })
 
+          if (!this.isFollowUp) {
+            Button('下载测试样例')
+              .height(36)
+              .fontSize(13)
+              .backgroundColor('#e6edf5')
+              .fontColor('#1f477d')
+              .borderRadius(8)
+              .enabled(!this.isLoading)
+              .margin({ bottom: 16 })
+              .onClick(() => {
+                router.pushUrl({ url: 'pages/SampleDownloadPage' });
+              })
+          }
+
           if (this.isFollowUp) {
             Column() {
               Text(`新增复查：${this.caseName || this.caseId}`)

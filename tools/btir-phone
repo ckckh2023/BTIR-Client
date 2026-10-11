@@ -48,7 +48,7 @@ case "${1:-start}" in
     fi
     for ((attempt = 0; attempt < 90; attempt++)); do
       if is_ready; then
-        result=$("$hdc" -t "$target" shell aa start -a EntryAbility -b cn.aipremol.btir.client 2>&1)
+        result=$("$hdc" -t "$target" shell aa start -a EntryAbility -b cn.btir.client 2>&1)
         if [[ "$result" != *"start ability successfully"* ]]; then
           echo "BTIR 启动失败：$result" >&2
           exit 1

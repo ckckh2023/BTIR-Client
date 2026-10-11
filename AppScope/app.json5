@@ -1,7 +1,7 @@
 {
   "app": {
-    "bundleName": "cn.aipremol.btir.client",
-    "vendor": "ai-premol",
+    "bundleName": "cn.btir.client",
+    "vendor": "BTIR",
     "versionCode": 1,
     "versionName": "1.0.0",
     "icon": "$media:icon",

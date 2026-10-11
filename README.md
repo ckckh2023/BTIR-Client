@@ -3,6 +3,12 @@ BTIR 项目的客户端版本，可与服务端对齐，为网页版使用扩展
 
 服务端相关内容在 https://github.com/ckckh2023/BTIR-BrainTumor-ImageRecognition
 
+## 鸿蒙真机安装
+
+默认构建和目前的 `unsigned.hap` 安装包未签名，仅用于开发模拟器。真机测试需用华为 AGC 调试证书及包含目标手机 UDID 的调试 Profile 签名。Linux 命令行准备、签名与安装步骤见 [真机签名说明](docs/HARMONYOS-SIGNING.md)，本地助手为 `python3 tools/btir-sign`。
+
+当前应用包名为 `cn.btir.client`，厂商及签名组织为 `BTIR`。此包名对应一个新应用，旧包名下的本地登录状态等数据不会自动迁移；AGC 应用及 Profile 也需使用新包名。已有 P12 可复用，通过 `python3 tools/btir-sign csr` 以正确组织名生成新 CSR。
+
 ## 鸿蒙模拟器
 
 在这台 Linux 开发机上运行 `btir-phone start` 可启动模拟器、BTIR 应用和本机上传转发服务；用 `btir-phone status` 检查状态，`btir-phone stop` 停止。真机无需本机转发服务。

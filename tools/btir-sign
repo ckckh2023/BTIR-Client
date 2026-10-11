@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+"""BTIR 本地签名助手；证书和 Profile 必须先由华为 AGC 签发。"""
+import argparse
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import zipfile
+
+
+PROJECT = Path(__file__).resolve().parent.parent
+MATERIAL = PROJECT / '.signing'
+UNSIGNED = PROJECT / 'entry/build/default/outputs/default/entry-default-unsigned.hap'
+SUBJECT = 'CN=BTIR Development,OU=Development,O=BTIR,C=CN'
+
+
+def executable(name):
+    location = shutil.which(name)
+    if not location:
+        raise ValueError(f'找不到 {name}，请将 JDK 21 的 bin 目录加入 PATH')
+    return location
+
+
+def sign_tool():
+    path = Path(os.environ.get('BTIR_HAP_SIGN_TOOL', str(
+        Path.home() / '.local/share/harmonyos/command-line-tools/sdk/default/openharmony/toolchains/lib/hap-sign-tool.jar')))
+    if not path.is_file():
+        raise ValueError('找不到 hap-sign-tool.jar，请用 BTIR_HAP_SIGN_TOOL 指定 SDK 中的文件')
+    return [executable('java'), '-jar', str(path)]
+
+
+def run(command):
+    subprocess.run(command, check=True)
+
+
+def verify(hap):
+    if not hap.is_file():
+        raise ValueError(f'找不到 HAP：{hap}')
+    with tempfile.TemporaryDirectory(prefix='btir-sign-verify-') as directory:
+        run(sign_tool() + ['verify-app', '-inFile', str(hap),
+            '-outCertChain', str(Path(directory) / 'chain.cer'),
+            '-outProfile', str(Path(directory) / 'profile.p7b')])
+
+
+def prepare(args):
+    directory = args.directory.resolve()
+    store = directory / 'btir-debug.p12'
+    csr = directory / 'btir-debug.csr'
+    if store.exists() or csr.exists():
+        raise ValueError('密钥或 CSR 已存在；请继续使用原密钥，不要覆盖。若需重新导出 CSR，可用 keytool -certreq')
+    directory.mkdir(parents=True, exist_ok=True)
+    keytool = executable('keytool')
+    print('请在终端设置密钥库密码，并妥善保存。CSR 导出时需再次输入相同密码。', flush=True)
+    run([keytool, '-genkeypair', '-alias', args.alias, '-keyalg', 'EC',
+         '-groupname', 'secp256r1', '-sigalg', 'SHA256withECDSA',
+         '-validity', '3650', '-dname', args.subject, '-storetype', 'PKCS12',
+         '-keystore', str(store)])
+    run([keytool, '-certreq', '-alias', args.alias, '-sigalg', 'SHA256withECDSA',
+         '-keystore', str(store), '-file', str(csr)])
+    print(f'密钥：{store}\n证书请求：{csr}\n别名：{args.alias}')
+    print('下一步：仅上传 CSR 到 AGC 申请调试证书，再申请包含目标真机 UDID 的调试 Profile。')
+
+
+def sign(args):
+    source = args.input.resolve()
+    output = args.output.resolve()
+    for path in (source, args.keystore, args.certificate, args.profile):
+        if not path.is_file():
+            raise ValueError(f'缺少文件：{path}')
+    if output.exists():
+        raise ValueError(f'输出文件已存在，请指定新的 --output：{output}')
+    with zipfile.ZipFile(source) as archive:
+        app = json.loads(archive.read('module.json'))['app']
+    if app['bundleName'] != 'cn.btir.client':
+        raise ValueError('输入 HAP 的包名不是 cn.btir.client')
+    minimum = int(app['minAPIVersion'])
+    # HarmonyOS 编码示例：50000012 表示 5.0.0 / API 12。
+    api = minimum % 1000000 if minimum >= 1000000 else minimum
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise ValueError('请在交互终端中运行签名命令，不要通过管道或重定向运行；官方工具需要终端读取密码。')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    print('官方工具依次询问 KeystorePwd（密钥库密码）和 KeyPwd（私钥密码），每次须在 30 秒内输入。', flush=True)
+    print('通过本助手生成的 P12，两次输入相同的原密码；按回车提交，输入时不会显示字符。', flush=True)
+    with tempfile.TemporaryDirectory(prefix='.btir-sign-', dir=output.parent) as directory:
+        temporary_hap = Path(directory) / 'BTIR-signed.hap'
+        run(sign_tool() + ['sign-app', '-mode', 'localSign',
+            '-keyAlias', args.alias, '-keystoreFile', str(args.keystore.resolve()),
+            '-appCertFile', str(args.certificate.resolve()),
+            '-profileFile', str(args.profile.resolve()), '-profileSigned', '1',
+            '-inFile', str(source), '-outFile', str(temporary_hap),
+            '-signAlg', 'SHA256withECDSA', '-compatibleVersion', str(api),
+            '-signCode', '1', '-pwdInputMode', '1'])
+        verify(temporary_hap)
+        # 不覆盖已经存在的产物，即使它在签名期间被其他进程创建。
+        os.link(temporary_hap, output)
+    print(f'签名和完整性校验通过：{output}')
+    print('真机是否接受此包，还取决于华为证书链、Profile 类型及目标 UDID。')
+
+
+def export_csr(args):
+    store = args.keystore.resolve()
+    output = args.output.resolve()
+    if not store.is_file():
+        raise ValueError(f'找不到密钥库：{store}')
+    if output.exists():
+        raise ValueError(f'CSR 已存在，请指定新的 --output：{output}')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    print('请输入原 P12 的密码。此操作复用原密钥，按指定主体生成新的 CSR。', flush=True)
+    with tempfile.TemporaryDirectory(prefix='.btir-csr-', dir=output.parent) as directory:
+        temporary_csr = Path(directory) / 'request.csr'
+        run([executable('keytool'), '-certreq', '-alias', args.alias,
+             '-sigalg', 'SHA256withECDSA', '-keystore', str(store),
+             '-dname', args.subject, '-file', str(temporary_csr)])
+        os.link(temporary_csr, output)
+    print(f'新的证书请求：{output}\n主体：{args.subject}')
+    print('申请新证书时请上传此 CSR；已有证书的主体不会随之改变。')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest='command', required=True)
+    init = commands.add_parser('prepare', help='交互生成本地 P12 密钥与 CSR；不申请华为证书')
+    init.add_argument('--directory', type=Path, default=MATERIAL)
+    init.add_argument('--alias', default='btir-debug')
+    init.add_argument('--subject', default=SUBJECT)
+    init.set_defaults(action=prepare)
+    csr = commands.add_parser('csr', help='复用已有 P12，按新主体导出 CSR')
+    csr.add_argument('--keystore', type=Path, default=MATERIAL / 'btir-debug.p12')
+    csr.add_argument('--output', type=Path, default=MATERIAL / 'btir-debug-btir.csr')
+    csr.add_argument('--alias', default='btir-debug')
+    csr.add_argument('--subject', default=SUBJECT)
+    csr.set_defaults(action=export_csr)
+    signing = commands.add_parser('sign', help='使用 AGC 签名材料签署已构建的 HAP 并验证')
+    signing.add_argument('--keystore', type=Path, default=MATERIAL / 'btir-debug.p12')
+    signing.add_argument('--certificate', type=Path, default=MATERIAL / 'btir-debug.cer')
+    signing.add_argument('--profile', type=Path, default=MATERIAL / 'btir-debug.p7b')
+    signing.add_argument('--input', type=Path, default=UNSIGNED)
+    signing.add_argument('--output', type=Path, default=MATERIAL / 'BTIR-device-signed.hap')
+    signing.add_argument('--alias', default='btir-debug')
+    signing.set_defaults(action=sign)
+    checking = commands.add_parser('verify', help='检查 HAP 签名及完整性；不替代真机信任检查')
+    checking.add_argument('hap', type=Path)
+    checking.set_defaults(action=lambda args: verify(args.hap.resolve()))
+    args = parser.parse_args()
+    os.umask(0o077)
+    try:
+        args.action(args)
+    except subprocess.CalledProcessError as error:
+        print(f'官方工具执行失败（退出码 {error.returncode}），请检查上面的错误信息。', file=sys.stderr)
+        return 1
+    except (ValueError, OSError, KeyError, zipfile.BadZipFile) as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

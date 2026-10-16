@@ -42,8 +42,14 @@
       "target": [
         "dir"
       ],
-      "icon": "build/icon.png",
-      "category": "Science"
+      "icon": "build/icons",
+      "category": "Science",
+      "desktop": {
+        "StartupWMClass": "btir-client"
+      }
+    },
+    "deb": {
+      "afterInstall": "build/after-install.sh"
     }
   },
   "allowScripts": {

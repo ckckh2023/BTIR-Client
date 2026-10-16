@@ -54,6 +54,7 @@ const createMainWindow = () => {
         height: 860,
         minWidth: 1024,
         minHeight: 700,
+        icon: path.join(assetsRoot, 'icon_exp.png'),
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,

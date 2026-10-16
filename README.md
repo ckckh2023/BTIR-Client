@@ -12,7 +12,7 @@ BTIR 项目的客户端版本，可与服务端对齐，为网页版与本地使
 
 桌面平台设备相关内容在 https://github.com/ckckh2023/BTIR-Client/tree/PC
 
-征集开发者中 . . .
+致谢开发者：[ckckh2023](https://github.com/ckckh2023)
 
 --- 
 

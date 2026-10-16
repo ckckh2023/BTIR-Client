@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>服务源设置 - 智瞳医脑 - 脑肿瘤MRI影像智能辅助诊断系统</title>
+    <link rel="icon" type="image/png" href="/assets/icon_exp.png">
+    <!-- 桌面版专属页面，使用原生脚本，无需 Vue -->
+    <script>
+        (function () {
+            var theme = 'light'
+            try {
+                theme = localStorage.getItem('btir_theme') || 'light'
+            } catch (e) { /* 忽略存储不可用 */ }
+            document.documentElement.setAttribute('data-theme', theme)
+        })()
+    </script>
+    <link rel="stylesheet" href="./theme.css">
+    <link rel="stylesheet" href="./auth.css">
+</head>
+<body>
+    <div class="auth-card">
+        <button type="button" class="theme-toggle" id="themeToggle" title="切换主题" aria-label="切换主题">
+            <svg class="guide-icon-dark" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" style="display:none">
+                <circle cx="8" cy="8" r="3.2"></circle>
+                <path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M12.7 3.4l-1.3 1.3M4.7 11.3l-1.3 1.3"></path>
+            </svg>
+            <svg class="guide-icon-light" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M13 9.5A5.5 5.5 0 0 1 6.5 3 5.5 5.5 0 1 0 13 9.5Z"></path>
+            </svg>
+        </button>
+
+        <h1>服务源设置</h1>
+
+        <div id="message" class="message" style="display:none"></div>
+
+        <p id="desktopOnly" style="display:none; font-size:14px; line-height:1.8;">
+            服务源设置仅在桌面客户端中提供，网页版的服务源由部署方决定。<a href="./index.html" style="color: var(--btir-accent);">返回主页</a>
+        </p>
+
+        <form id="settingForm" novalidate>
+            <div class="form-group">
+                <label for="apiBase">服务源地址</label>
+                <input
+                    type="url"
+                    id="apiBase"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="https://example.com"
+                    required
+                />
+                <p id="defaultHint" style="font-size:12px; margin:8px 0 0; line-height:1.6;">
+                    默认服务源：<span id="defaultBaseText"></span>
+                    <a href="#" id="resetDefault" style="color: var(--btir-accent);">恢复默认</a>
+                </p>
+            </div>
+            <button type="submit" class="submit-btn" id="submitBtn">保存并重新登录</button>
+        </form>
+
+        <div style="text-align:center; margin-top:16px; font-size:13px;">
+            <a id="backLink" href="./login.html" style="color: var(--btir-accent);">返回登录</a>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            const form = document.getElementById('settingForm')
+            const submitBtn = document.getElementById('submitBtn')
+            const messageBox = document.getElementById('message')
+            const input = document.getElementById('apiBase')
+            const defaultHint = document.getElementById('defaultHint')
+            const defaultBaseText = document.getElementById('defaultBaseText')
+            const resetDefault = document.getElementById('resetDefault')
+            const backLink = document.getElementById('backLink')
+            const desktopOnly = document.getElementById('desktopOnly')
+            const themeButton = document.getElementById('themeToggle')
+
+            const showMessage = (text, type) => {
+                messageBox.textContent = text
+                messageBox.className = `message ${type}`
+                messageBox.style.display = 'block'
+            }
+            const hideMessage = () => {
+                messageBox.style.display = 'none'
+            }
+
+            const applyTheme = (theme) => {
+                document.documentElement.setAttribute('data-theme', theme)
+                document.querySelector('.guide-icon-dark').style.display = theme === 'dark' ? '' : 'none'
+                document.querySelector('.guide-icon-light').style.display = theme === 'dark' ? 'none' : ''
+            }
+            themeButton.addEventListener('click', () => {
+                const next = document.documentElement.getAttribute('data-theme') === 'dark'
+                    ? 'light'
+                    : 'dark'
+                localStorage.setItem('btir_theme', next)
+                applyTheme(next)
+            })
+            applyTheme(localStorage.getItem('btir_theme') || 'light')
+
+            if (!window.btirEnv) {
+                form.style.display = 'none'
+                defaultHint.style.display = 'none'
+                desktopOnly.style.display = 'block'
+                return
+            }
+
+            const defaultBase = window.btirEnv.defaultApiBase || ''
+            defaultBaseText.textContent = defaultBase
+
+            input.value = window.btirEnv.apiBase || defaultBase
+            input.focus()
+            input.select()
+
+            resetDefault.addEventListener('click', (event) => {
+                event.preventDefault()
+                input.value = defaultBase
+                hideMessage()
+                input.focus()
+            })
+
+            if (localStorage.getItem('btir_token')) {
+                backLink.textContent = '返回主页'
+                backLink.href = './index.html'
+            }
+
+            form.addEventListener('submit', async (event) => {
+                event.preventDefault()
+                hideMessage()
+
+                const raw = input.value.trim().replace(/\/+$/, '')
+                if (!raw) {
+                    showMessage('请输入服务源地址', 'error')
+                    return
+                }
+                let parsed
+                try {
+                    parsed = new URL(raw)
+                } catch {
+                    showMessage('服务源地址格式无效', 'error')
+                    return
+                }
+                if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+                    showMessage('服务源地址必须以 http:// 或 https:// 开头', 'error')
+                    return
+                }
+
+                submitBtn.disabled = true
+                submitBtn.textContent = '保存中...'
+                try {
+                    if (raw === defaultBase) {
+                        localStorage.removeItem('btir_api_base')
+                    } else {
+                        localStorage.setItem('btir_api_base', raw)
+                    }
+                    localStorage.removeItem('btir_token')
+                    localStorage.removeItem('btir_user')
+                    showMessage('服务源已更新，正在前往登录页...', 'success')
+                    setTimeout(() => {
+                        window.location.href = './login.html'
+                    }, 600)
+                } catch (err) {
+                    showMessage(`保存失败：${err.message || '请稍后重试'}`, 'error')
+                    submitBtn.disabled = false
+                    submitBtn.textContent = '保存并重新登录'
+                }
+            })
+        })()
+    </script>
+</body>
+</html>

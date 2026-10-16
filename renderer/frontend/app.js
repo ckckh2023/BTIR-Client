@@ -3,7 +3,8 @@
         const btirRootOptions = {
             data() {
                 return {
-                    API_BASE: window.btirEnv?.apiBase ?? '',
+                    API_BASE: (window.btirEnv && localStorage.getItem('btir_api_base')) || window.btirEnv?.apiBase || '',
+                    isDesktop: !!window.btirEnv,
                     loading: false,
                     analysisCancelled: false,
                     analysisPolling: false,
@@ -1492,6 +1493,9 @@
                 },
                 openAbout() {
                     window.location.href = 'about.html'
+                },
+                openSettings() {
+                    window.location.href = 'setting.html'
                 },
                 handleHomeClick() {
                     if (this.taskId) {

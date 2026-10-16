@@ -123,7 +123,7 @@
         createApp({
             data() {
                 return {
-                    API_BASE: window.btirEnv?.apiBase ?? '',
+                    API_BASE: (window.btirEnv && localStorage.getItem('btir_api_base')) || window.btirEnv?.apiBase || '',
                     mode: 'login',
                     username: '',
                     password: '',

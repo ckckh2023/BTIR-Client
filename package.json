@@ -1,0 +1,53 @@
+{
+  "name": "btir-client",
+  "version": "0.1.0",
+  "description": "BTIR 是一个面向四模态脑肿瘤 MRI 的完整分析系统，用户可在此客户端中登录、完成分类、分割与 AI 辅助分析，并在网页内查看关键影像特征、切片、对比和 3D 影像。",
+  "main": "electron/main.js",
+  "author": "ckckh2023",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "sync": "node electron/sync.js",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "cn.btir.desktop",
+    "productName": "BTIR 智瞳医脑桌面服务系统",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**"
+    ],
+    "extraResources": [
+      {
+        "from": "renderer",
+        "to": "renderer"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "build/icon.png",
+      "category": "Science"
+    }
+  }
+}

@@ -45,5 +45,8 @@
       "icon": "build/icon.png",
       "category": "Science"
     }
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
   }
 }

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, protocol, net, shell } = require('electron')
+const { app, BrowserWindow, Menu, protocol, net, shell } = require('electron')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 
@@ -66,6 +66,17 @@ const createMainWindow = () => {
         shell.openExternal(url)
         return { action: 'deny' }
     })
+    win.webContents.on('before-input-event', (event, input) => {
+        if (input.type !== 'keyDown') return
+        const key = (input.key || '').toLowerCase()
+        if (input.control && key === 'r') {
+            win.webContents.reload()
+            event.preventDefault()
+        } else if (!app.isPackaged && (key === 'f12' || (input.control && input.shift && key === 'i'))) {
+            win.webContents.toggleDevTools()
+            event.preventDefault()
+        }
+    })
     win.loadURL(`${APP_SCHEME}://${APP_HOST}/index.html`)
     return win
 }
@@ -84,6 +95,7 @@ if (!gotLock) {
     })
 
     app.whenReady().then(() => {
+        Menu.setApplicationMenu(null)
         protocol.handle(APP_SCHEME, handleAppRequest)
         createMainWindow()
         app.on('activate', () => {

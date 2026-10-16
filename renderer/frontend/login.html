@@ -74,6 +74,20 @@
                     <path d="M13 9.5A5.5 5.5 0 0 1 6.5 3 5.5 5.5 0 1 0 13 9.5Z"></path>
                 </svg>
             </button>
+            <button
+                v-if="isDesktop"
+                type="button"
+                class="theme-toggle"
+                style="right: 52px"
+                title="服务源设置"
+                aria-label="服务源设置"
+                @click="openSettings"
+            >
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+            </button>
             <h1>智瞳医脑</h1>
             <p class="auth-card-subtitle">脑肿瘤MRI影像智能辅助诊断系统</p>
 
@@ -124,6 +138,7 @@
             data() {
                 return {
                     API_BASE: (window.btirEnv && localStorage.getItem('btir_api_base')) || window.btirEnv?.apiBase || '',
+                    isDesktop: !!window.btirEnv,
                     mode: 'login',
                     username: '',
                     password: '',
@@ -141,6 +156,9 @@
                     this.theme = this.theme === 'dark' ? 'light' : 'dark'
                     localStorage.setItem('btir_theme', this.theme)
                     this.applyTheme()
+                },
+                openSettings() {
+                    window.location.href = 'setting.html'
                 },
                 switchMode(mode) {
                     this.mode = mode

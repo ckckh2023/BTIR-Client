@@ -1,6 +1,6 @@
 # BTIR-Client
 
-BTIR 项目的桌面客户端，基于 Electron 打包。前端资源随安装包本地分发，通过远程 API 访问服务端，默认连接 <https://btir-online.ai-premol.cn/>。
+BTIR 项目的桌面客户端，基于 Electron 打包。前端资源随应用本地分发，通过远程 API 访问服务端，默认连接 <https://btir-online.ai-premol.cn/>。
 
 # 环境要求
 
@@ -28,11 +28,12 @@ node electron/sync.js /path/to/repo # 或指定主仓库路径
 ## 打包
 
 ```bash
-npm run dist        # 按当前平台打包
-npm run dist:win    # Windows NSIS 安装包
-npm run dist:linux  # Linux AppImage
+npm run dist # 按当前平台打包
+npm run dist:win # Windows
+npm run dist:linux # Linux
 ```
 
+产物为绿色免安装目录
 连接非默认服务端时：
 
 ```bash

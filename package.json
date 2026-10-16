@@ -1,6 +1,6 @@
 {
-  "name": "BTIR-Client",
-  "version": "1.0.0",
+  "name": "btir-client",
+  "version": "1.0.1",
   "description": "BTIR 是一个面向四模态脑肿瘤 MRI 的完整分析系统，用户可在此客户端中登录、完成分类、分割与 AI 辅助分析，并在网页内查看关键影像特征、切片、对比和 3D 影像。",
   "main": "electron/main.js",
   "author": "ckckh2023 <ckckh2023@outlook.com>",

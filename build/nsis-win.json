@@ -1,0 +1,37 @@
+{
+  "appId": "com.github.btir.desktop",
+  "productName": "BTIR-Client",
+  "directories": {
+    "output": "release",
+    "buildResources": "build"
+  },
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "release/.icon-ico/icon.ico",
+    "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": true,
+    "allowElevation": true,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "BTIR-Client",
+    "deleteAppDataOnUninstall": false,
+    "installerIcon": "release/.icon-ico/icon.ico",
+    "uninstallerIcon": "release/.icon-ico/icon.ico",
+    "installerHeaderIcon": "release/.icon-ico/icon.ico",
+    "language": "2052",
+    "installerLanguages": ["zh_CN"],
+    "multiLanguageInstaller": true,
+    "runAfterFinish": true,
+    "menuCategory": false,
+    "warningsAsErrors": false
+  }
+}

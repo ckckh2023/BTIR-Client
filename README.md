@@ -33,7 +33,9 @@ npm run dist:win # Windows
 npm run dist:linux # Linux
 ```
 
-产物为绿色免安装目录
+产物为绿色免安装目录，Windows 可以使用 `npx electron-builder --prepackaged release/win-unpacked --win nsis --x64 --publish never --config build/nsis-win.json` 进行打包，Linux 可以使用 `npx electron-builder appimage deb` 进行 AppImage 和 Deb 包的产出。
+
+
 连接非默认服务端时：
 
 ```bash

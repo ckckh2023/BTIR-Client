@@ -1,12 +1,12 @@
-# 鸿蒙真机签名与安装
+# 鸿蒙签名与真机测试（开发者）
 
-当前工程 `signingConfigs` 为空，默认构建的 `entry-default-unsigned.hap` 没有签名。它已在开发模拟器中测试，但不能作为华为真机安装包分发。SDK 官方 `hap-sign-tool.jar verify-app` 对当前产物报告 `signature not found`。
+本文面向负责打包和测试设备授权的开发者。普通用户请先阅读 [客户端安装与使用说明](../README.md)。
 
-用户提供的视频是 HAP 手动签名教程。其主要步骤为：约 1 分钟生成 P12/CSR，3–8 分钟在 AppGallery Connect（AGC）申请证书、登记设备和 Profile，9–15 分钟配置签名材料并打包。以下流程适用于本项目的 Linux 命令行环境。
+工程未配置 Hvigor 自动签名，默认构建的 `entry-default-unsigned.hap` 没有签名。真机测试需使用华为签发的应用证书和包含目标设备 UDID 的调试 Profile，对构建产物签名。以下流程适用于 Linux 命令行环境。
 
-## 如何确认当前进度
+## 准备工作
 
-截至本次检查，本机已安装 JDK 21、Hvigor、HDC 和官方签名工具；当前 HAP 未签名，常用下载目录及工程中未找到配套签名材料，HDC 未检测到设备。账号内的证书与 Profile 状态需要登录 AGC 确认。
+开发环境需安装 JDK 21、Hvigor、HDC 和 SDK 中的官方签名工具。申请证书及 Profile 前，先确认以下材料：
 
 | 检查位置 | 应确认的内容 |
 | --- | --- |
@@ -59,9 +59,7 @@ python3 tools/btir-sign csr
 
 不需要把目标手机连接到这台电脑才能申请 Profile，但需要取得实际安装设备的 UDID。
 
-用户提供的视频在约 5 分 05 秒的“01-5 选择设备”幻灯片中提供了比赛主办方的测试设备 UDID，要求参赛者登记该设备。该流程让主办方收到安装包后能在自己的手机上安装；本地没有手机的参赛者也可以完成这一步。如果用于该赛事提交，先向主办方确认当前测试设备 UDID，再在 AGC 中登记并加入调试 Profile。历史教程中的设备标识不保证仍适用于当前活动。
-
-如果用于朋友或其他测试者的手机，请由对方获取其手机 UDID，再把它登记到自己的 AGC 并加入 Profile。对方可在其电脑上通过 `hdc shell bm get --udid` 获取；登记模拟器或别人的设备不能授权目标手机。
+交付给远程测试者时，请由对方获取实际测试手机的 UDID，再将其登记到自己的 AGC 并加入 Profile。对方可在其电脑上通过 `hdc shell bm get --udid` 获取。教程中的示例 UDID 不能用于授权其他手机；如果向赛事或测试机构交付，应向接收方确认实际设备列表。
 
 如果暂时没有任何可用测试手机，可考虑华为 AGC 的“质量 > 云调试”。云真机可用于远程验证，具体机型、账号权限和应用签名要求以当前服务页面为准。它不意味着生成的调试包能安装到所有用户手机。
 
@@ -97,7 +95,7 @@ python3 tools/btir-sign sign \
   --output /absolute/path/BTIR-device-signed.hap
 ```
 
-签名工具默认从这台机器的 `~/.local/share/harmonyos/command-line-tools/sdk/default/openharmony/toolchains/lib/hap-sign-tool.jar` 加载。其他环境可用 `BTIR_HAP_SIGN_TOOL` 指定完整路径；`java` 与 `keytool` 应使用 JDK 21。
+签名工具默认从 `~/.local/share/harmonyos/command-line-tools/sdk/default/openharmony/toolchains/lib/hap-sign-tool.jar` 加载。不同安装路径可用 `BTIR_HAP_SIGN_TOOL` 指定完整路径；`java` 与 `keytool` 应使用 JDK 21。
 
 ## 4. 安装到已登记的真机
 
@@ -127,4 +125,4 @@ hdc -t <真机设备标识> shell aa start -a EntryAbility -b cn.btir.client
 - [申请调试 Profile](https://developer.huawei.com/consumer/cn/doc/doccenter-getting-started/agc-help-debug-profile-0000002248181278)：选择应用、调试证书及已注册设备。
 - [获取 UDID](https://developer.huawei.com/consumer/cn/doc/doccenter-dev-faq/faqs-performance-analysis-kit-59)。
 - [华为关于 `9568322` 的定位案例](https://developer.huawei.com/consumer/cn/forum/topic/0201174845503607516)：发布签名无法用于该案例的本地自测，应使用测试签名。
-- 当前安装的官方 SDK `hap-sign-tool.jar -h`：本地生成、签名和验证的参数依据。
+- 官方 SDK `hap-sign-tool.jar -h`：本地生成、签名和验证的参数依据。

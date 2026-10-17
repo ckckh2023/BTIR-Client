@@ -13,7 +13,7 @@
     "dist:linux": "electron-builder --linux"
   },
   "devDependencies": {
-    "electron": "^33.2.0",
+    "electron": "^34.5.8",
     "electron-builder": "^25.1.8"
   },
   "build": {
@@ -53,6 +53,6 @@
     }
   },
   "allowScripts": {
-    "electron@33.4.11": true
+    "electron@34.5.8": true
   }
 }

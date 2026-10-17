@@ -5,6 +5,7 @@ BTIR 项目的桌面客户端，基于 Electron 打包。前端资源随应用�
 # 环境要求
 
 - Node.js ≥ 18
+- 桌面运行时为 Electron 34，当前锁定版本为 34.5.8
 - 服务端需在 `BTIR_CORS_ORIGINS` 中放行 `app://btir`
 
 ## 快速开始

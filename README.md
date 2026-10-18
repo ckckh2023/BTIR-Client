@@ -6,6 +6,7 @@ BTIR 项目的桌面客户端，基于 Electron 打包。前端资源随应用�
 
 - Node.js ≥ 18
 - 桌面运行时为 Electron 34.5.8
+- 桌面运行时为 Electron 34.5.8
 - 服务端需在 `BTIR_CORS_ORIGINS` 中放行 `app://btir`
 
 ## 快速开始
@@ -32,10 +33,14 @@ node electron/sync.js /path/to/repo # 或指定主仓库路径
 npm run dist # 按当前平台打包
 npm run dist:win # Windows
 npm run dist:linux # Linux
+npm run dist:harmony # 鸿蒙 PC
 ```
 
-产物为绿色免安装目录，Windows 可以使用 `npx electron-builder --prepackaged release/win-unpacked --win nsis --x64 --publish never --config build/nsis-win.json` 进行打包，Linux 可以使用 `npx electron-builder --linux AppImage deb` 进行 AppImage 和 Deb 包的产出。
+Windows、Linux 默认产物为绿色免安装目录。
 
+Windows 可以使用 `npx electron-builder --prepackaged release/win-unpacked --win nsis --x64 --publish never --config build/nsis-win.json` 进行打包。
+
+Linux 可以使用 `npx electron-builder --linux AppImage deb` 进行 AppImage 和 Deb 包的产出。
 
 连接非默认服务端时：
 

@@ -10,11 +10,13 @@
     "sync": "node electron/sync.js",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
-    "dist:linux": "electron-builder --linux"
+    "dist:linux": "electron-builder --linux",
+    "dist:harmony": "node harmony/build.cjs"
   },
   "devDependencies": {
     "electron": "^34.5.8",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "json5": "^2.2.3"
   },
   "build": {
     "appId": "com.github.btir.desktop",

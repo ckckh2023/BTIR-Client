@@ -1,5 +1,6 @@
 const { app, BrowserWindow, Menu, protocol, net, shell } = require('electron')
 const path = require('node:path')
+const { existsSync } = require('node:fs')
 const { pathToFileURL } = require('node:url')
 
 const APP_SCHEME = 'app'
@@ -18,8 +19,10 @@ protocol.registerSchemesAsPrivileged([
     },
 ])
 
-const rendererRoot = app.isPackaged
-    ? path.join(process.resourcesPath, 'renderer')
+// Desktop builds use extraResources; HarmonyOS keeps renderer beside electron/.
+const desktopRendererRoot = path.join(process.resourcesPath, 'renderer')
+const rendererRoot = app.isPackaged && existsSync(path.join(desktopRendererRoot, 'frontend', 'index.html'))
+    ? desktopRendererRoot
     : path.join(__dirname, '..', 'renderer')
 
 const frontendRoot = path.join(rendererRoot, 'frontend')

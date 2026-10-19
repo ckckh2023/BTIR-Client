@@ -130,7 +130,7 @@ export class HttpClient {
   }
 
   private async uploadViaBridge<T>(path: string, files: BridgeFileInfo[], paths: string[],
-    fields: Record<string, string>, onStage?: (stage: string) => void): Promise<T> {
+    fields: Record<string, string>, onStage?: (stage: string) => void, onProgress?: (percent: number) => void): Promise<T> {
     let sessionId = '';
     let sentBytes = 0;
     const totalBytes = files.reduce((total, file) => total + file.size, 0);
@@ -162,11 +162,13 @@ export class HttpClient {
             sentBytes += count;
             const percent = totalBytes > 0 ? Math.floor(sentBytes * 100 / totalBytes) : 100;
             onStage?.(`正在上传 ${Math.min(percent, 100)}%…`);
+            onProgress?.(Math.min(percent, 100));
           }
         } finally {
           await fs.close(file);
         }
       }
+      onProgress?.(100);
       onStage?.('上传完成，等待服务器处理…');
       return await this.bridgeRequest<T>(`/stream/finish/${sessionId}`);
     } catch (error) {
@@ -260,7 +262,7 @@ export class HttpClient {
   }
 
   async uploadFiles<T>(path: string, files: MultipartUploadFile[], cacheDir: string,
-    extraFields?: Record<string, string>, onStage?: (stage: string) => void): Promise<T> {
+    extraFields?: Record<string, string>, onStage?: (stage: string) => void, onProgress?: (percent: number) => void): Promise<T> {
     const baseUrl = ApiConfig.getInstance().baseUrl;
     let url = `${baseUrl}${path}`;
     const headers = this.buildHeaders('multipart/form-data');
@@ -336,7 +338,7 @@ export class HttpClient {
       if (viaBridge) {
         preparingFiles = false;
         onStage?.('正在通过电脑转发上传…');
-        return await this.uploadViaBridge<T>(path, bridgeFiles, temporaryPaths, extraFields ?? {}, onStage);
+        return await this.uploadViaBridge<T>(path, bridgeFiles, temporaryPaths, extraFields ?? {}, onStage, onProgress);
       }
 
       httpRequest = http.createHttp();
@@ -347,6 +349,7 @@ export class HttpClient {
           const percent = Math.min(100, Math.floor(uploadedBytes * 100 / uploadTotalBytes));
           if (percent >= lastProgressPercent + 5 || percent === 100) {
             lastProgressPercent = percent;
+            onProgress?.(percent);
             onStage?.(percent < 100 ? `正在上传 ${percent}%…` : '上传完成，等待服务器处理…');
           }
         }
@@ -376,6 +379,7 @@ export class HttpClient {
         throw new ApiError(status, responseData);
       }
 
+      onProgress?.(100);
       return responseData as T;
     } catch (error) {
       if (error instanceof ApiError) {
@@ -389,7 +393,7 @@ export class HttpClient {
         const progressText = uploadTotalBytes > 0
           ? `（已发送 ${Math.min(100, Math.floor(uploadedBytes * 100 / uploadTotalBytes))}%）` : '';
         throw new ApiError(0, message,
-          `上传连接中断${progressText}。请确认 btir-phone start 已运行后重试。错误码 23000056`);
+          `上传连接中断${progressText}。请检查网络后重试；若持续失败，请保留此错误码联系管理员。错误码 23000056`);
       }
       throw new ApiError(0, message, `${prefix}${code}：${message}`);
     } finally {
@@ -415,16 +419,17 @@ export class HttpClient {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
+    const httpRequest = http.createHttp();
     try {
-      const httpRequest = http.createHttp();
       const options: http.HttpRequestOptions = {
         method: http.RequestMethod.GET,
         header: headers,
         expectDataType: http.HttpDataType.ARRAY_BUFFER,
+        connectTimeout: 8000,
+        readTimeout: 30000,
       };
 
       const response = await httpRequest.request(url, options);
-      httpRequest.destroy();
 
       if (response.responseCode >= 400) {
         throw new ApiError(response.responseCode, String(response.result));
@@ -436,6 +441,8 @@ export class HttpClient {
         throw error;
       }
       throw new ApiError(0, String(error), `文件下载失败: ${String(error)}`);
+    } finally {
+      httpRequest.destroy();
     }
   }
 

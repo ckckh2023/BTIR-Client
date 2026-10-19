@@ -1,19 +1,8 @@
+import { SAMPLE_CASES, SampleCase } from '../common/SampleCatalog';
 import { http } from '@kit.NetworkKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { ApiConfig } from '../common/ApiConfig';
 import { ApiError } from '../common/ApiError';
-
-export interface SampleCase {
-  title: string;
-  fileName: string;
-}
-
-// 与网页端 guide.html 的公开样例保持一致。
-export const SAMPLE_CASES: SampleCase[] = [
-  { title: '病例 1', fileName: 'BraTS19_2013_2_1.zip' },
-  { title: '病例 2', fileName: 'BraTS19_2013_4_1.zip' },
-  { title: '病例 3', fileName: 'BraTS19_2013_7_1.zip' }
-];
 
 export class SampleDownloadCancelled extends Error {
   constructor() { super('已取消下载'); }

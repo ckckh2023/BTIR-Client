@@ -24,6 +24,7 @@ export interface UploadArchiveOptions {
   replacementFiles?: Record<string, string>;
   replacementNames?: Record<string, string>;
   onStage?: (stage: string) => void;
+  onProgress?: (percent: number) => void;
 }
 
 export class TaskService {
@@ -79,7 +80,7 @@ export class TaskService {
       }
     }
     return this.httpClient.uploadFiles<TaskCreatedResponse>(
-      '/tasks/3d/archive', files, cacheDir, extraFields, options.onStage
+      '/tasks/3d/archive', files, cacheDir, extraFields, options.onStage, options.onProgress
     );
   }
 
@@ -91,7 +92,8 @@ export class TaskService {
     caseId?: string,
     caseName?: string,
     studyDate?: string,
-    onStage?: (stage: string) => void
+    onStage?: (stage: string) => void,
+    onProgress?: (percent: number) => void
   ): Promise<TaskCreatedResponse> {
     const uploadFiles: MultipartUploadFile[] = [];
     for (const key of ['flair', 't1ce', 't1', 't2']) {
@@ -110,7 +112,7 @@ export class TaskService {
     if (caseId) fields['case_id'] = caseId;
     if (caseName) fields['case_name'] = caseName;
     if (studyDate) fields['study_date'] = studyDate;
-    return this.httpClient.uploadFiles<TaskCreatedResponse>('/tasks/3d', uploadFiles, cacheDir, fields, onStage);
+    return this.httpClient.uploadFiles<TaskCreatedResponse>('/tasks/3d', uploadFiles, cacheDir, fields, onStage, onProgress);
   }
 
   async runAsync(taskId: string): Promise<TaskEnqueuedResponse> {

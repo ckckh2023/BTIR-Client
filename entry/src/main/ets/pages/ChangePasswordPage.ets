@@ -1,3 +1,5 @@
+import { PageHeader } from '../components/PageHeader';
+import { AppTheme } from '../common/AppTheme';
 import { AuthService } from '../service/AuthService';
 import { ApiError } from '../common/ApiError';
 import { buffer } from '@kit.ArkTS';
@@ -62,17 +64,20 @@ struct ChangePasswordPage {
 
   build() {
     Column() {
+    PageHeader({ title: '修改密码', showBack: false, canLeave: !this.isLoading })
+    Scroll() {
+    Column() {
       // 标题区域
       Column() {
         Text('修改密码')
           .fontSize(24)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#1f477d')
-          .margin({ top: 60 })
+          .fontColor(AppTheme.primary)
+          .margin({ top: 24 })
 
         Text('首次登录需要修改临时密码')
           .fontSize(14)
-          .fontColor('#7d90a8')
+          .fontColor(AppTheme.muted)
           .margin({ top: 8 })
       }
       .width('100%')
@@ -86,8 +91,8 @@ struct ChangePasswordPage {
           .height(48)
           .fontSize(16)
           .type(InputType.Password)
-          .backgroundColor('#f7f9fc')
-          .borderRadius(8)
+          .backgroundColor(AppTheme.subtle)
+          .borderRadius(AppTheme.buttonRadius)
           .padding({ left: 16, right: 16 })
           .onChange((value: string) => {
             this.currentPassword = value;
@@ -100,8 +105,8 @@ struct ChangePasswordPage {
           .height(48)
           .fontSize(16)
           .type(InputType.Password)
-          .backgroundColor('#f7f9fc')
-          .borderRadius(8)
+          .backgroundColor(AppTheme.subtle)
+          .borderRadius(AppTheme.buttonRadius)
           .padding({ left: 16, right: 16 })
           .onChange((value: string) => {
             this.newPassword = value;
@@ -114,8 +119,8 @@ struct ChangePasswordPage {
           .height(48)
           .fontSize(16)
           .type(InputType.Password)
-          .backgroundColor('#f7f9fc')
-          .borderRadius(8)
+          .backgroundColor(AppTheme.subtle)
+          .borderRadius(AppTheme.buttonRadius)
           .padding({ left: 16, right: 16 })
           .onChange((value: string) => {
             this.confirmPassword = value;
@@ -131,12 +136,12 @@ struct ChangePasswordPage {
         Row() {
           Text(this.errorMessage)
             .fontSize(14)
-            .fontColor('#b42318')
+            .fontColor(AppTheme.danger)
         }
         .width('85%')
         .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-        .backgroundColor('#fee2e2')
-        .borderRadius(8)
+        .backgroundColor(AppTheme.dangerBackground)
+        .borderRadius(AppTheme.buttonRadius)
         .margin({ top: 8, bottom: 8 })
       }
 
@@ -146,9 +151,9 @@ struct ChangePasswordPage {
         .height(48)
         .fontSize(16)
         .fontWeight(FontWeight.Medium)
-        .backgroundColor('#1f477d')
-        .fontColor('#ffffff')
-        .borderRadius(8)
+        .backgroundColor(AppTheme.primary)
+        .fontColor(AppTheme.surface)
+        .borderRadius(AppTheme.buttonRadius)
         .enabled(!this.isLoading)
         .margin({ top: 16 })
         .onClick(() => {
@@ -156,7 +161,11 @@ struct ChangePasswordPage {
         })
     }
     .width('100%')
-    .height('100%')
-    .backgroundColor('#f2f5f9')
+    .padding({ top: 24, bottom: 32 })
+    }
+    .width('100%')
+    .layoutWeight(1).align(Alignment.Top)
+    .scrollBar(BarState.Off)
+    }.width('100%').height('100%').backgroundColor(AppTheme.background)
   }
 }

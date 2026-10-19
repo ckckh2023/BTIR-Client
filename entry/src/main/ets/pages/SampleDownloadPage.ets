@@ -1,7 +1,10 @@
+import { PageHeader } from '../components/PageHeader';
+import { AppTheme } from '../common/AppTheme';
 import { router } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { fileIo as fs, picker } from '@kit.CoreFileKit';
-import { SAMPLE_CASES, SampleCase, SampleService, SampleDownloadCancelled } from '../service/SampleService';
+import { SampleService, SampleDownloadCancelled } from '../service/SampleService';
+import { SAMPLE_CASES, SampleCase, sampleSizeText } from '../common/SampleCatalog';
 
 @Entry
 @Component
@@ -13,8 +16,15 @@ struct SampleDownloadPage {
   @State isError: boolean = false;
   private service: SampleService = new SampleService();
   private pageActive: boolean = true;
+  @State videoVisible: boolean = false;
+  @State videoError: boolean = false;
+  @State videoLoading: boolean = true;
 
-  aboutToBeDeleted(): void {
+  onPageShow(): void { this.videoVisible = true; this.videoLoading = true; }
+  onPageHide(): void { this.videoVisible = false; }
+
+  aboutToDisappear(): void {
+    this.videoVisible = false;
     this.pageActive = false;
     this.service.cancel();
   }
@@ -52,7 +62,7 @@ struct SampleDownloadPage {
         await fs.close(destination);
       }
       if (this.pageActive) {
-        this.message = `${sample.title}样例已保存到所选位置。返回上传页，选择这个 ZIP 后即可开始分析。`;
+        this.message = `${sample.title}已保存`;
       }
     } catch (error) {
       if (this.pageActive) {
@@ -72,105 +82,100 @@ struct SampleDownloadPage {
     }
   }
 
+  @Builder
+  BaselineMetric(label: string, value: number) {
+    Column({ space: 6 }) {
+      Text(label).fontSize(12).fontColor(AppTheme.secondary)
+      Text(`${value.toFixed(1)} cm³`).fontSize(14).fontWeight(FontWeight.Bold).fontColor(AppTheme.text)
+    }.layoutWeight(1).alignItems(HorizontalAlign.Start)
+  }
+
   build() {
     Column() {
-      Row() {
-        Button('返回')
-          .height(32)
-          .fontSize(12)
-          .backgroundColor('#586b82')
-          .fontColor('#ffffff')
-          .borderRadius(6)
-          .enabled(this.phase !== 'saving')
-          .onClick(() => {
-            this.service.cancel();
-            router.back();
-          })
-        Blank()
-        Text('测试样例')
-          .fontSize(18)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#1e2d3e')
-        Blank()
-      }
-      .width('100%')
-      .height(56)
-      .padding({ left: 16, right: 16 })
-      .backgroundColor('#ffffff')
-
+      PageHeader({ title: '测试样例使用说明', canLeave: this.phase !== 'saving',
+        onBack: (): void => { this.service.cancel(); router.back(); } })
       Scroll() {
-        Column() {
-          Text('与网页端相同的三个 BraTS 测试病例，每个 ZIP 包含 FLAIR、T1CE、T1、T2 四模态 NIfTI 文件。')
-            .fontSize(14)
-            .fontColor('#586b82')
-            .width('100%')
-            .margin({ bottom: 16 })
-
-          ForEach(SAMPLE_CASES, (sample: SampleCase) => {
-            Column() {
-              Text(sample.title)
-                .fontSize(16)
-                .fontWeight(FontWeight.Bold)
-                .fontColor('#1e2d3e')
-                .width('100%')
-              Text(sample.fileName)
-                .fontSize(13)
-                .fontColor('#586b82')
-                .width('100%')
-                .margin({ top: 6, bottom: 12 })
-              Button(this.activeFile === sample.fileName
-                ? (this.phase === 'picking' ? '选择保存位置…' : this.progress) : '下载 ZIP')
-                .width('100%')
-                .height(40)
-                .fontSize(14)
-                .backgroundColor('#e6edf5')
-                .fontColor('#1f477d')
-                .borderRadius(8)
-                .enabled(!this.activeFile)
-                .onClick(() => { this.downloadSample(sample); })
-              if (this.activeFile === sample.fileName && this.phase === 'downloading') {
-                Button('取消下载')
-                  .height(36)
-                  .fontSize(12)
-                  .fontColor('#586b82')
-                  .backgroundColor('#f7f9fc')
-                  .borderRadius(8)
-                  .margin({ top: 8 })
-                  .onClick(() => { this.service.cancel(); })
-              }
+        Column({ space: 24 }) {
+          Column({ space: 14 }) {
+            Text('下载一个测试病例').fontSize(20).fontWeight(FontWeight.Bold).fontColor(AppTheme.text).width('100%')
+            Text('每个 ZIP 包含同一病例的四模态 NIfTI 文件').fontSize(13).fontColor(AppTheme.secondary).width('100%')
+            if (this.videoError) {
+              Column({ space: 12 }) {
+                Text('视频暂时无法播放').fontSize(14).fontColor(AppTheme.secondary)
+                Button('重新加载').height(AppTheme.buttonHeight).borderRadius(AppTheme.buttonRadius)
+                  .backgroundColor(AppTheme.disabled).fontColor(AppTheme.primary)
+                  .onClick(() => { this.videoLoading = true; this.videoError = false; })
+              }.width('100%').aspectRatio(16 / 9).justifyContent(FlexAlign.Center)
+            } else if (this.videoVisible) {
+              Stack() {
+                Video({ src: $rawfile('upload-demo.mp4') }).width('100%').aspectRatio(16 / 9)
+                  .autoPlay(true).muted(true).loop(true).controls(true).objectFit(ImageFit.Contain)
+                  .onPrepared(() => { if (this.videoVisible) this.videoLoading = false; })
+                  .onError(() => { if (this.videoVisible) { this.videoLoading = false; this.videoError = true; } })
+                if (this.videoLoading) LoadingProgress().width(32).height(32).color(AppTheme.primary).hitTestBehavior(HitTestMode.None)
+              }.width('100%').aspectRatio(16 / 9).clip(true).borderRadius(AppTheme.buttonRadius)
             }
-            .width('100%')
-            .padding(16)
-            .backgroundColor('#ffffff')
-            .borderRadius(12)
-            .margin({ bottom: 12 })
-          }, (sample: SampleCase) => sample.fileName)
+            ForEach(SAMPLE_CASES, (sample: SampleCase) => {
+              Column({ space: 6 }) {
+                Text(sample.fileName).fontSize(14).fontWeight(FontWeight.Medium).fontColor(AppTheme.text).width('100%')
+                Text(sampleSizeText(sample.sizeBytes)).fontSize(13).fontColor(AppTheme.muted).width('100%')
+                Button(this.activeFile === sample.fileName
+                  ? (this.phase === 'picking' ? '选择保存位置…' : this.progress) : `下载${sample.title}`)
+                  .width('100%').height(AppTheme.buttonHeight).fontSize(14).borderRadius(AppTheme.buttonRadius)
+                  .backgroundColor(AppTheme.primary).fontColor(AppTheme.surface).enabled(!this.activeFile)
+                  .margin({ top: 6 }).onClick(() => { this.downloadSample(sample); })
+                if (this.activeFile === sample.fileName && this.phase === 'downloading') {
+                  Button('取消下载').height(AppTheme.buttonHeight).fontSize(13).borderRadius(AppTheme.buttonRadius)
+                    .fontColor(AppTheme.secondary).backgroundColor(AppTheme.surface).onClick(() => { this.service.cancel(); })
+                }
+              }.width('100%').padding(14).backgroundColor(AppTheme.surface).borderRadius(AppTheme.buttonRadius)
+                .border({ width: 1, color: AppTheme.border })
+            }, (sample: SampleCase) => sample.fileName)
+            if (this.message) {
+              Text(this.message).fontSize(14).fontColor(this.isError ? AppTheme.danger : AppTheme.success)
+                .width('100%').padding(12).backgroundColor(this.isError ? AppTheme.dangerBackground : AppTheme.successBackground)
+                .borderRadius(AppTheme.buttonRadius)
+            }
+          }.width('100%').padding(16).backgroundColor(AppTheme.subtle).borderRadius(AppTheme.cardRadius)
+            .border({ width: 1, color: AppTheme.border })
 
-          if (this.message) {
-            Text(this.message)
-              .fontSize(13)
-              .fontColor(this.isError ? '#b42318' : '#1f477d')
-              .width('100%')
-              .padding(12)
-              .backgroundColor(this.isError ? '#fee2e2' : '#eaf2ff')
-              .borderRadius(8)
-              .margin({ bottom: 12 })
-          }
+          Column({ space: 12 }) {
+            Text('测试样例使用说明').fontSize(19).fontWeight(FontWeight.Bold).fontColor(AppTheme.text).width('100%')
+            Text('上传 ZIP').fontSize(16).fontWeight(FontWeight.Bold).fontColor(AppTheme.text).width('100%')
+            Text('1. 返回病例分析页\n2. 选择刚下载的一个 ZIP\n3. 确认文件后，点击“开始数据分析”')
+              .fontSize(14).lineHeight(26).fontColor(AppTheme.secondary).width('100%')
+            Text('每次分析只上传一个病例 ZIP').fontSize(13).fontColor(AppTheme.primary).width('100%')
+              .padding(12).backgroundColor(AppTheme.selected).borderRadius(AppTheme.buttonRadius)
+            Text('查看分析结果').fontSize(16).fontWeight(FontWeight.Bold).fontColor(AppTheme.text).width('100%')
+            Text('查看综合结果、影像学关键特征、模型依据和重点层切片；同一病例可新增复查并对比。点击左上角 Logo 返回病例分析页。')
+              .fontSize(14).lineHeight(24).fontColor(AppTheme.secondary).width('100%')
+          }.width('100%')
 
-          Text('使用方法：选择样例和保存位置 → 返回上传页选择已下载的 ZIP → 开始数据分析。每次只上传一个病例 ZIP。')
-            .fontSize(13)
-            .fontColor('#586b82')
-            .width('100%')
-        }
-        .width('90%')
-        .padding({ top: 20, bottom: 24 })
-      }
-      .width('100%')
-      .layoutWeight(1)
-      .align(Alignment.Top)
-    }
-    .width('100%')
-    .height('100%')
-    .backgroundColor('#f2f5f9')
+          Column({ space: 14 }) {
+            Text('样例核对').fontSize(19).fontWeight(FontWeight.Bold).fontColor(AppTheme.text).width('100%')
+            Text('当前项目模型基准结果').fontSize(13).fontColor(AppTheme.secondary).width('100%')
+            ForEach(SAMPLE_CASES, (sample: SampleCase) => {
+              Column({ space: 12 }) {
+                Text(sample.fileName).fontSize(13).fontWeight(FontWeight.Medium).fontColor(AppTheme.text).width('100%')
+                Flex({ wrap: FlexWrap.Wrap, alignItems: ItemAlign.End }) {
+                  Text(`${sample.probability.toFixed(2)}%`).fontSize(26).fontWeight(FontWeight.Bold).fontColor(AppTheme.primary)
+                  Text('分类肿瘤概率').fontSize(12).fontColor(AppTheme.secondary).margin({ left: 8, bottom: 4 })
+                }.width('100%')
+                Row({ space: 8 }) {
+                  this.BaselineMetric('WT', sample.wtCm3)
+                  this.BaselineMetric('TC', sample.tcCm3)
+                  this.BaselineMetric('ET', sample.etCm3)
+                }.width('100%')
+              }.width('100%').padding(14).backgroundColor(AppTheme.surface).borderRadius(AppTheme.buttonRadius)
+                .border({ width: 1, color: AppTheme.border })
+            }, (sample: SampleCase) => sample.fileName)
+            Text('分类概率与分割体积存在少量浮动时，可视为正常推理差异').fontSize(13).lineHeight(22).fontColor(AppTheme.secondary).width('100%')
+          }.width('100%').padding(16).backgroundColor(AppTheme.subtle).borderRadius(AppTheme.cardRadius)
+            .border({ width: 1, color: AppTheme.border })
+        }.width('100%').padding(16).backgroundColor(AppTheme.surface).borderRadius(AppTheme.cardRadius)
+          .border({ width: 1, color: AppTheme.border })
+          .margin({ top: 16, bottom: 24 })
+      }.width('100%').padding({ left: 16, right: 16 }).layoutWeight(1).align(Alignment.Top)
+    }.width('100%').height('100%').backgroundColor(AppTheme.background)
   }
 }

@@ -50,3 +50,18 @@ journalctl --user -u btir-emulator-upload-bridge.service
 密钥、证书与 Profile 放在已被 Git 忽略的 `.signing/` 目录。签名助手通过终端交互读取密码。不要将 P12、密码或含设备授权信息的调试 Profile 提交到仓库。
 
 签名验证与目标手机安装验证需要分别完成；发布 Release 时请说明测试包适用设备及有效期。
+
+
+## 体验对齐与回归
+
+手机端与网页端的差异清单、验证证据及本轮安装包签名命令见 [体验对齐记录](MOBILE-PARITY.md)。
+
+修改进度映射、轮询、结果或上传链路后运行：
+
+```bash
+node tests/mobile-parity.cjs
+```
+
+需要 Node.js 24；与网页进度的逐帧对照需要主服务端的 `frontend/analysis-progress.js`，可用 `BTIR_WEB_FRONTEND` 指定目录。
+
+页面排版、导航与样例内容的 1.1.1 对齐说明见 [逐页记录](WEB-INTERACTION-PARITY.md)。

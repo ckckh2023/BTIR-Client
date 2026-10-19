@@ -2,8 +2,8 @@
   "app": {
     "bundleName": "cn.btir.client",
     "vendor": "BTIR",
-    "versionCode": 1,
-    "versionName": "1.0.0",
+    "versionCode": 4,
+    "versionName": "1.1.2",
     "icon": "$media:icon",
     "label": "$string:app_name"
   }

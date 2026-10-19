@@ -1,3 +1,5 @@
+import { PageHeader } from '../components/PageHeader';
+import { AppTheme } from '../common/AppTheme';
 import { router } from '@kit.ArkUI';
 import { TaskService, UploadArchiveOptions } from '../service/TaskService';
 import { common } from '@kit.AbilityKit';
@@ -33,6 +35,7 @@ struct ModalitySelectPage {
   @State replacementNames: Record<string, string> = {};
   @State isLoading: boolean = false;
   @State uploadStage: string = '';
+  @State uploadPercent: number = 0;
   @State errorMessage: string = '';
 
   private taskService: TaskService = new TaskService();
@@ -109,7 +112,9 @@ struct ModalitySelectPage {
         return;
       }
     }
+    if (this.isLoading) return;
     this.isLoading = true;
+    this.uploadPercent = 0;
     this.errorMessage = '';
 
     try {
@@ -125,7 +130,8 @@ struct ModalitySelectPage {
         modalitySeriesUids: modalitySeriesUids,
         replacementFiles: this.replacementFiles,
         replacementNames: this.replacementNames,
-        onStage: (stage: string) => { this.uploadStage = stage; }
+        onStage: (stage: string) => { this.uploadStage = stage; },
+          onProgress: (percent: number) => { this.uploadPercent = Math.max(this.uploadPercent, percent); }
       };
       const response = await this.taskService.uploadArchive(
         this.archiveUri, (getContext(this) as common.UIAbilityContext).cacheDir, this.archiveName, options
@@ -161,35 +167,14 @@ struct ModalitySelectPage {
   build() {
     Column() {
       // 顶部标题栏
-      Row() {
-        Text('模态选择')
-          .fontSize(20)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#1e2d3e')
-
-        Blank()
-
-        Button('返回')
-          .height(32)
-          .fontSize(12)
-          .backgroundColor('#586b82')
-          .fontColor('#ffffff')
-          .borderRadius(6)
-          .onClick(() => {
-            router.back();
-          })
-      }
-      .width('100%')
-      .height(56)
-      .padding({ left: 16, right: 16 })
-      .backgroundColor('#ffffff')
+      PageHeader({ title: '模态选择', canLeave: !this.isLoading })
 
       // 说明
       Text(this.isNiftiMode() ?
         '请确认 ZIP 内的模态文件；缺失时可从手机补选 NIfTI 文件' :
         '请确认 DICOM 序列；缺失时可从手机补选 NIfTI 文件')
         .fontSize(14)
-        .fontColor('#586b82')
+        .fontColor(AppTheme.secondary)
         .width('90%')
         .margin({ top: 16, bottom: 16 })
 
@@ -203,13 +188,13 @@ struct ModalitySelectPage {
                 Text(modalityKey.toUpperCase())
                   .fontSize(16)
                   .fontWeight(FontWeight.Bold)
-                  .fontColor('#1e2d3e')
+                  .fontColor(AppTheme.text)
 
                 Blank()
 
                 Text(this.modalities[modalityKey].reason ?? '')
                   .fontSize(12)
-                  .fontColor('#b42318')
+                  .fontColor(AppTheme.danger)
               }
               .width('100%')
               .margin({ bottom: 8 })
@@ -217,7 +202,7 @@ struct ModalitySelectPage {
               if (this.modalities[modalityKey].message) {
                 Text(this.modalities[modalityKey].message)
                   .fontSize(12)
-                  .fontColor('#586b82')
+                  .fontColor(AppTheme.secondary)
                   .width('100%')
                   .margin({ bottom: 8 })
               }
@@ -242,11 +227,11 @@ struct ModalitySelectPage {
                     Column() {
                       Text(candidate.filename ?? '')
                         .fontSize(14)
-                        .fontColor('#1e2d3e')
+                        .fontColor(AppTheme.text)
                       if (candidate.size_bytes) {
                         Text(`${(candidate.size_bytes / 1024 / 1024).toFixed(2)} MB`)
                           .fontSize(12)
-                          .fontColor('#7d90a8')
+                          .fontColor(AppTheme.muted)
                       }
                     }
                     .layoutWeight(1)
@@ -276,11 +261,11 @@ struct ModalitySelectPage {
                     Column() {
                       Text(candidate.label ?? candidate.series_uid ?? '')
                         .fontSize(14)
-                        .fontColor('#1e2d3e')
+                        .fontColor(AppTheme.text)
                       if (candidate.file_count) {
                         Text(`${candidate.file_count} 个文件`)
                           .fontSize(12)
-                          .fontColor('#7d90a8')
+                          .fontColor(AppTheme.muted)
                       }
                     }
                     .layoutWeight(1)
@@ -293,11 +278,11 @@ struct ModalitySelectPage {
 
               Button(this.replacementNames[modalityKey] ? '更换补选文件' : '从手机补选 NIfTI 文件')
                 .width('100%')
-                .height(40)
+                .height(AppTheme.buttonHeight)
                 .fontSize(13)
                 .backgroundColor('#eaf2fb')
-                .fontColor('#1f477d')
-                .borderRadius(8)
+                .fontColor(AppTheme.primary)
+                .borderRadius(AppTheme.buttonRadius)
                 .enabled(!this.isLoading)
                 .onClick(() => {
                   this.selectReplacement(modalityKey);
@@ -306,16 +291,16 @@ struct ModalitySelectPage {
               if (this.replacementNames[modalityKey]) {
                 Text(this.replacementNames[modalityKey])
                   .fontSize(12)
-                  .fontColor('#1f477d')
+                  .fontColor(AppTheme.primary)
                   .maxLines(1)
                   .width('100%')
                   .margin({ top: 8 })
               }
             }
             .width('100%')
-            .padding(16)
-            .backgroundColor('#ffffff')
-            .borderRadius(12)
+            .padding(AppTheme.pagePadding)
+            .backgroundColor(AppTheme.surface)
+            .borderRadius(AppTheme.cardRadius)
             .margin({ bottom: 12 })
           })
         }
@@ -328,19 +313,26 @@ struct ModalitySelectPage {
         Row() {
           Text(this.errorMessage)
             .fontSize(14)
-            .fontColor('#b42318')
+            .fontColor(AppTheme.danger)
         }
         .width('90%')
         .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-        .backgroundColor('#fee2e2')
-        .borderRadius(8)
+        .backgroundColor(AppTheme.dangerBackground)
+        .borderRadius(AppTheme.buttonRadius)
         .margin({ bottom: 8 })
+      }
+
+      if (this.isLoading) {
+        Progress({ value: this.uploadPercent / 10, total: 100, type: ProgressType.Linear })
+          .width('90%').color(AppTheme.primary).margin({ top: 8, bottom: 4 })
+        Text(`上传病例 · 整体进度 ${Math.floor(this.uploadPercent / 10)}%`)
+          .width('90%').fontSize(12).fontColor(AppTheme.secondary).margin({ bottom: 8 })
       }
 
       if (this.uploadStage) {
         Text(this.uploadStage)
           .fontSize(13)
-          .fontColor('#1f477d')
+          .fontColor(AppTheme.primary)
           .width('90%')
           .margin({ bottom: 8 })
       }
@@ -351,9 +343,9 @@ struct ModalitySelectPage {
         .height(48)
         .fontSize(16)
         .fontWeight(FontWeight.Medium)
-        .backgroundColor('#1f477d')
-        .fontColor('#ffffff')
-        .borderRadius(8)
+        .backgroundColor(AppTheme.primary)
+        .fontColor(AppTheme.surface)
+        .borderRadius(AppTheme.buttonRadius)
         .enabled(!this.isLoading)
         .margin({ bottom: 16 })
         .onClick(() => {
@@ -362,6 +354,6 @@ struct ModalitySelectPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#f2f5f9')
+    .backgroundColor(AppTheme.background)
   }
 }

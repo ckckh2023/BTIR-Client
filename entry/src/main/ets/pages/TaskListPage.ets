@@ -1,8 +1,12 @@
+import { activateLogo } from '../common/AppNavigation';
+import { PageHeader } from '../components/PageHeader';
+import { AppTheme } from '../common/AppTheme';
 import { router } from '@kit.ArkUI';
 import { TaskService } from '../service/TaskService';
 import { ApiError } from '../common/ApiError';
 import { TokenManager } from '../common/HttpClient';
 import { TaskListResponse, TaskSummaryResponse } from '../model/TaskModels';
+import { formatDate, taskStatusLabel } from '../common/ResultPresentation';
 
 interface CaseGroup {
   caseId: string;
@@ -29,18 +33,38 @@ struct TaskListPage {
   @State renameTaskId: string = '';
   @State renameDraft: string = '';
   @State manageTaskId: string = '';
-  @State showFilters: boolean = false;
+  private filterStatuses: string[] = ['', 'created', 'queued', 'running', 'partial', 'succeeded', 'failed', 'canceled'];
 
   private taskService: TaskService = new TaskService();
   private fetchVersion: number = 0;
+  private pageVisible: boolean = false;
+  private refreshTimer: number = -1;
+  private refreshFailures: number = 0;
+  private refreshBlocked: boolean = false;
+  @State isRefreshing: boolean = false;
 
-  aboutToAppear(): void {
-    this.fetchTasks();
+  private date(value?: string): string { return formatDate(value); }
+
+  private stopRefresh(): void {
+    if (this.refreshTimer >= 0) clearTimeout(this.refreshTimer);
+    this.refreshTimer = -1;
   }
 
-  async fetchTasks(): Promise<void> {
+  onPageShow(): void { this.pageVisible = true; this.fetchTasks(); }
+  onPageHide(): void {
+    this.pageVisible = false;
+    this.fetchVersion++;
+    this.stopRefresh();
+  }
+  aboutToDisappear(): void { this.onPageHide(); }
+
+
+  async fetchTasks(background: boolean = false): Promise<void> {
+    if (!this.pageVisible || (background && this.isRefreshing)) return;
+    this.stopRefresh();
     const version = ++this.fetchVersion;
-    this.isLoading = true;
+    this.isLoading = this.tasks.length === 0 && !background;
+    this.isRefreshing = true;
     this.errorMessage = '';
 
     try {
@@ -52,6 +76,8 @@ struct TaskListPage {
         : await this.taskService.getTaskList(this.pageSize, offset,
           this.statusFilter || undefined, this.searchQuery || undefined);
       if (version !== this.fetchVersion) return;
+      this.refreshFailures = 0;
+      this.refreshBlocked = false;
       this.tasks = response.items;
       this.total = response.total;
       if (this.tasks.length === 0 && this.total > 0 && this.currentPage > 1) {
@@ -65,15 +91,28 @@ struct TaskListPage {
         router.replaceUrl({ url: 'pages/LoginPage' });
         return;
       }
+      this.refreshFailures++;
+      this.refreshBlocked = error instanceof ApiError && [401, 403, 404].includes(error.statusCode);
       this.errorMessage = `获取列表失败: ${error instanceof ApiError ? error.message : String(error)}`;
     } finally {
-      if (version === this.fetchVersion) this.isLoading = false;
+      if (version === this.fetchVersion) {
+        this.isLoading = false;
+        this.isRefreshing = false;
+        const active = this.tasks.some((task: TaskSummaryResponse) =>
+          ['queued', 'running', 'cancel_requested'].includes(task.status));
+        if (this.pageVisible && !this.refreshBlocked && this.listMode === 'active' && (active || this.refreshFailures > 0)) {
+          const delay = this.refreshFailures ? Math.min(15000, 3000 * Math.pow(2, this.refreshFailures - 1)) : 3000;
+          this.refreshTimer = setTimeout(() => { this.refreshTimer = -1; this.fetchTasks(true); }, delay);
+        }
+      }
     }
   }
 
   switchMode(mode: string): void {
     if (this.listMode === mode) return;
     this.listMode = mode;
+    this.tasks = [];
+    this.total = 0;
     this.currentPage = 1;
     this.statusFilter = '';
     this.pendingAction = '';
@@ -82,7 +121,6 @@ struct TaskListPage {
     this.renameTaskId = '';
     this.renameDraft = '';
     this.manageTaskId = '';
-    this.showFilters = false;
     this.fetchTasks();
   }
 
@@ -207,67 +245,46 @@ struct TaskListPage {
   getStatusColor(status: string): string {
     switch (status) {
       case 'succeeded':
-        return '#18794e';
+        return AppTheme.success;
       case 'failed':
-        return '#b42318';
+        return AppTheme.danger;
       case 'canceled':
-        return '#586b82';
+        return AppTheme.secondary;
       case 'running':
-        return '#1d4ed8';
+        return AppTheme.accent;
       case 'queued':
-        return '#1d4ed8';
+        return AppTheme.accent;
       case 'cancel_requested':
-        return '#1d4ed8';
+        return AppTheme.accent;
       case 'partial':
-        return '#586b82';
+        return AppTheme.secondary;
       default:
-        return '#586b82';
+        return AppTheme.secondary;
     }
   }
 
   getStatusBgColor(status: string): string {
     switch (status) {
       case 'succeeded':
-        return '#dcfce7';
+        return AppTheme.successBackground;
       case 'failed':
-        return '#fee2e2';
+        return AppTheme.dangerBackground;
       case 'canceled':
-        return '#e6edf5';
+        return AppTheme.disabled;
       case 'running':
-        return '#dbeafe';
+        return AppTheme.selected;
       case 'queued':
-        return '#dbeafe';
+        return AppTheme.selected;
       case 'cancel_requested':
-        return '#dbeafe';
+        return AppTheme.selected;
       case 'partial':
-        return '#e6edf5';
+        return AppTheme.disabled;
       default:
-        return '#e6edf5';
+        return AppTheme.disabled;
     }
   }
 
-  getStatusText(status: string): string {
-    switch (status) {
-      case 'created':
-        return '待运行';
-      case 'queued':
-        return '排队中';
-      case 'running':
-        return '运行中';
-      case 'cancel_requested':
-        return '取消中';
-      case 'partial':
-        return '部分完成';
-      case 'succeeded':
-        return '已完成';
-      case 'failed':
-        return '失败';
-      case 'canceled':
-        return '已取消';
-      default:
-        return status;
-    }
-  }
+  getStatusText(status: string): string { return taskStatusLabel(status); }
 
   get totalPages(): number {
     return Math.ceil(this.total / this.pageSize);
@@ -280,7 +297,7 @@ struct TaskListPage {
         Text(task.name || '未命名检查')
           .fontSize(15)
           .fontWeight(FontWeight.Medium)
-          .fontColor('#1e2d3e')
+          .fontColor(AppTheme.text)
           .layoutWeight(1)
         Text(this.getStatusText(task.status))
           .fontSize(11)
@@ -292,16 +309,16 @@ struct TaskListPage {
       }
       .width('100%')
 
-      Text(`检查日期：${task.study_date || task.created_at}`)
+      Text(`检查日期：${this.date(task.study_date || task.created_at)}`)
         .fontSize(12)
-        .fontColor('#586b82')
+        .fontColor(AppTheme.secondary)
         .width('100%')
         .margin({ top: 5 })
 
       if (this.listMode === 'archived') {
-        Text(`归档于 ${task.archived_at || '未知时间'}`)
+        Text(`归档于 ${this.date(task.archived_at)}`)
           .fontSize(11)
-          .fontColor('#7d90a8')
+          .fontColor(AppTheme.muted)
           .width('100%')
           .margin({ top: 3 })
       }
@@ -309,7 +326,7 @@ struct TaskListPage {
       if (task.error) {
         Text(task.error.message)
           .fontSize(12)
-          .fontColor('#b42318')
+          .fontColor(AppTheme.danger)
           .width('100%')
           .margin({ top: 7 })
       }
@@ -318,11 +335,11 @@ struct TaskListPage {
         Blank()
         if (this.listMode === 'active') {
           Button('查看详情')
-            .height(34)
+            .height(AppTheme.buttonHeight)
             .fontSize(12)
             .backgroundColor('#eaf2ff')
-            .fontColor('#1f477d')
-            .borderRadius(8)
+            .fontColor(AppTheme.primary)
+            .borderRadius(AppTheme.buttonRadius)
             .onClick(() => {
               router.pushUrl({
                 url: 'pages/TaskDetailPage',
@@ -331,11 +348,11 @@ struct TaskListPage {
             })
         }
         Button(this.manageTaskId === task.task_id ? '收起管理' : '管理')
-          .height(34)
+          .height(AppTheme.buttonHeight)
           .fontSize(12)
-          .backgroundColor('#e6edf5')
-          .fontColor('#1f477d')
-          .borderRadius(8)
+          .backgroundColor(AppTheme.disabled)
+          .fontColor(AppTheme.primary)
+          .borderRadius(AppTheme.buttonRadius)
           .margin({ left: this.listMode === 'active' ? 8 : 0 })
           .onClick(() => { this.toggleManage(task.task_id); })
       }
@@ -344,32 +361,26 @@ struct TaskListPage {
 
       if (this.manageTaskId === task.task_id) {
         Column() {
-          Text(`任务 ID：${task.task_id}`)
-            .fontSize(11)
-            .fontColor('#7d90a8')
-            .width('100%')
-            .margin({ bottom: 8 })
-
           if (this.renameTaskId === task.task_id) {
             TextInput({ text: this.renameDraft, placeholder: '输入检查名称' })
               .width('100%')
-              .height(40)
+              .height(AppTheme.buttonHeight)
               .maxLength(100)
-              .backgroundColor('#ffffff')
+              .backgroundColor(AppTheme.surface)
               .onChange((value: string) => { this.renameDraft = value; })
             Row() {
-              Button('保存名称')
-                .height(32)
+              Button(this.actionTaskId === task.task_id ? '保存中…' : '保存名称')
+                .height(AppTheme.buttonHeight)
                 .fontSize(12)
-                .backgroundColor('#1f477d')
-                .fontColor('#ffffff')
+                .backgroundColor(AppTheme.primary)
+                .fontColor(AppTheme.surface)
                 .enabled(!this.actionTaskId)
                 .onClick(() => { this.saveRename(task); })
               Button('取消')
-                .height(32)
+                .height(AppTheme.buttonHeight)
                 .fontSize(12)
-                .backgroundColor('#e6edf5')
-                .fontColor('#586b82')
+                .backgroundColor(AppTheme.disabled)
+                .fontColor(AppTheme.secondary)
                 .margin({ left: 8 })
                 .onClick(() => {
                   this.renameTaskId = '';
@@ -382,24 +393,24 @@ struct TaskListPage {
               ? '彻底删除后无法恢复，确认删除这次检查？'
               : '归档后可从“已归档”恢复，确认归档这次检查？')
               .fontSize(13)
-              .fontColor('#1e2d3e')
+              .fontColor(AppTheme.text)
               .width('100%')
               .margin({ bottom: 8 })
             Row() {
               Button('取消')
-                .height(32)
+                .height(AppTheme.buttonHeight)
                 .fontSize(12)
-                .backgroundColor('#e6edf5')
-                .fontColor('#586b82')
+                .backgroundColor(AppTheme.disabled)
+                .fontColor(AppTheme.secondary)
                 .onClick(() => {
                   this.pendingAction = '';
                   this.pendingTaskId = '';
                 })
-              Button('确认')
-                .height(32)
+              Button(this.actionTaskId === task.task_id ? '处理中…' : '确认')
+                .height(AppTheme.buttonHeight)
                 .fontSize(12)
-                .backgroundColor('#b42318')
-                .fontColor('#ffffff')
+                .backgroundColor(AppTheme.danger)
+                .fontColor(AppTheme.surface)
                 .enabled(!this.actionTaskId)
                 .margin({ left: 8 })
                 .onClick(() => { this.performAction(this.pendingAction, this.pendingTaskId); })
@@ -407,17 +418,18 @@ struct TaskListPage {
           } else if (this.listMode === 'active') {
             Row() {
               Button('重命名')
-                .height(32)
+                .enabled(!this.actionTaskId)
+                .height(AppTheme.buttonHeight)
                 .fontSize(12)
-                .backgroundColor('#ffffff')
-                .fontColor('#1f477d')
+                .backgroundColor(AppTheme.surface)
+                .fontColor(AppTheme.primary)
                 .onClick(() => { this.beginRename(task); })
               if (this.canArchive(task.status)) {
                 Button('归档检查')
-                  .height(32)
+                  .height(AppTheme.buttonHeight)
                   .fontSize(12)
-                  .backgroundColor('#ffffff')
-                  .fontColor('#b42318')
+                  .backgroundColor(AppTheme.surface)
+                  .fontColor(AppTheme.danger)
                   .enabled(!this.actionTaskId)
                   .margin({ left: 8 })
                   .onClick(() => { this.requestAction('archive', task.task_id); })
@@ -425,18 +437,18 @@ struct TaskListPage {
             }
           } else {
             Row() {
-              Button('恢复检查')
-                .height(32)
+              Button(this.actionTaskId === task.task_id ? '恢复中…' : '恢复检查')
+                .height(AppTheme.buttonHeight)
                 .fontSize(12)
-                .backgroundColor('#ffffff')
-                .fontColor('#18794e')
+                .backgroundColor(AppTheme.surface)
+                .fontColor(AppTheme.success)
                 .enabled(!this.actionTaskId)
                 .onClick(() => { this.performAction('restore', task.task_id); })
               Button('彻底删除')
-                .height(32)
+                .height(AppTheme.buttonHeight)
                 .fontSize(12)
-                .backgroundColor('#ffffff')
-                .fontColor('#b42318')
+                .backgroundColor(AppTheme.surface)
+                .fontColor(AppTheme.danger)
                 .enabled(!this.actionTaskId)
                 .margin({ left: 8 })
                 .onClick(() => { this.requestAction('purge', task.task_id); })
@@ -445,74 +457,47 @@ struct TaskListPage {
         }
         .width('100%')
         .padding(12)
-        .backgroundColor('#f2f5f9')
-        .borderRadius(8)
+        .backgroundColor(AppTheme.background)
+        .borderRadius(AppTheme.buttonRadius)
         .margin({ top: 10 })
       }
     }
     .width('100%')
     .padding(14)
-    .backgroundColor('#ffffff')
-    .borderRadius(12)
+    .backgroundColor(AppTheme.surface)
+    .borderRadius(AppTheme.cardRadius)
     .margin({ bottom: 8 })
   }
 
   build() {
     Column() {
       // 顶部标题栏
-      Row() {
-        Button('返回')
-          .height(32)
-          .fontSize(12)
-          .backgroundColor('#586b82')
-          .fontColor('#ffffff')
-          .borderRadius(6)
-          .onClick(() => {
-            router.back();
-          })
-
-        Blank()
-
-        Text('病例列表')
-          .fontSize(18)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#1e2d3e')
-
-        Blank()
-
-        Button('上传')
-          .height(32)
-          .fontSize(12)
-          .backgroundColor('#1f477d')
-          .fontColor('#ffffff')
-          .borderRadius(6)
-          .onClick(() => {
-            router.pushUrl({ url: 'pages/UploadPage' });
-          })
-      }
-      .width('100%')
-      .height(56)
-      .padding({ left: 16, right: 16 })
-      .backgroundColor('#ffffff')
+      PageHeader({ title: '任务管理', canLeave: !this.actionTaskId })
+      Row({ space: 20 }) {
+        Button('病例分析').fontSize(14).height(AppTheme.buttonHeight).backgroundColor(AppTheme.background)
+          .fontColor(AppTheme.secondary).onClick(() => { activateLogo(); })
+        Text('任务管理').fontSize(14).fontWeight(FontWeight.Bold).fontColor(AppTheme.primary)
+          .padding({ top: 12, bottom: 10 }).border({ width: { bottom: 2 }, color: AppTheme.primary })
+      }.width('100%').padding({ left: 20, right: 20 })
 
       Row() {
         Button('病例检查')
           .layoutWeight(1)
-          .height(38)
+          .height(AppTheme.buttonHeight)
           .fontSize(14)
-          .backgroundColor(this.listMode === 'active' ? '#1f477d' : '#e6edf5')
-          .fontColor(this.listMode === 'active' ? '#ffffff' : '#586b82')
-          .borderRadius(8)
+          .backgroundColor(this.listMode === 'active' ? AppTheme.selected : AppTheme.surface)
+          .fontColor(this.listMode === 'active' ? AppTheme.primary : AppTheme.secondary)
+          .borderRadius(AppTheme.buttonRadius)
           .onClick(() => { this.switchMode('active'); })
           .margin({ right: 8 })
 
         Button('已归档')
           .layoutWeight(1)
-          .height(38)
+          .height(AppTheme.buttonHeight)
           .fontSize(14)
-          .backgroundColor(this.listMode === 'archived' ? '#1f477d' : '#e6edf5')
-          .fontColor(this.listMode === 'archived' ? '#ffffff' : '#586b82')
-          .borderRadius(8)
+          .backgroundColor(this.listMode === 'archived' ? AppTheme.selected : AppTheme.surface)
+          .fontColor(this.listMode === 'archived' ? AppTheme.primary : AppTheme.secondary)
+          .borderRadius(AppTheme.buttonRadius)
           .onClick(() => { this.switchMode('archived'); })
       }
       .width('90%')
@@ -522,22 +507,36 @@ struct TaskListPage {
       Row() {
         TextInput({ placeholder: '搜索...' })
           .layoutWeight(1)
-          .height(40)
+          .height(AppTheme.buttonHeight)
           .fontSize(14)
-          .backgroundColor('#f7f9fc')
-          .borderRadius(8)
+          .backgroundColor(AppTheme.subtle)
+          .borderRadius(AppTheme.buttonRadius)
           .onChange((value: string) => {
             this.searchQuery = value;
           })
           .margin({ right: 8 })
 
         Button('搜索')
-          .height(40)
+          .height(AppTheme.buttonHeight)
           .fontSize(14)
-          .backgroundColor('#1f477d')
-          .fontColor('#ffffff')
-          .borderRadius(8)
+          .backgroundColor(AppTheme.primary)
+          .fontColor(AppTheme.surface)
+          .borderRadius(AppTheme.buttonRadius)
           .onClick(() => {
+            this.currentPage = 1;
+            this.fetchTasks();
+          })
+        Select(this.filterStatuses.map((status: string): SelectOption => ({
+          value: status ? this.getStatusText(status) : '全部状态'
+        })))
+          .selected(Math.max(0, this.filterStatuses.indexOf(this.statusFilter)))
+          .value(this.statusFilter ? this.getStatusText(this.statusFilter) : '全部状态')
+          .width(112).height(AppTheme.buttonHeight).font({ size: 13 })
+          .fontColor(AppTheme.primary).backgroundColor(AppTheme.subtle).borderRadius(AppTheme.buttonRadius)
+          .margin({ left: 8 })
+          .onSelect((index: number) => {
+            if (index < 0 || index >= this.filterStatuses.length) return;
+            this.statusFilter = this.filterStatuses[index];
             this.currentPage = 1;
             this.fetchTasks();
           })
@@ -545,52 +544,16 @@ struct TaskListPage {
       .width('90%')
       .margin({ top: 12, bottom: 8 })
 
-      Button(this.showFilters ? '收起状态筛选' :
-        this.statusFilter ? `状态：${this.getStatusText(this.statusFilter)}  ·  更改` : '筛选状态')
-        .height(32)
-        .fontSize(12)
-        .backgroundColor('#e6edf5')
-        .fontColor('#1f477d')
-        .borderRadius(8)
-        .onClick(() => { this.showFilters = !this.showFilters; })
-        .margin({ bottom: 10 })
-
-      if (this.showFilters) {
-        Scroll() {
-          Row() {
-            ForEach(['', 'created', 'queued', 'running', 'partial', 'succeeded', 'failed', 'canceled'], (status: string) => {
-              Button(status === '' ? '全部' : this.getStatusText(status))
-                .height(32)
-                .fontSize(12)
-                .backgroundColor(this.statusFilter === status ? '#1f477d' : '#e6edf5')
-                .fontColor(this.statusFilter === status ? '#ffffff' : '#586b82')
-                .borderRadius(6)
-                .onClick(() => {
-                  this.statusFilter = status;
-                  this.currentPage = 1;
-                  this.showFilters = false;
-                  this.fetchTasks();
-                })
-                .margin({ right: 6 })
-            })
-          }
-        }
-        .width('90%')
-        .scrollable(ScrollDirection.Horizontal)
-        .scrollBar(BarState.Off)
-        .margin({ bottom: 12 })
-      }
-
       // 同一病例的检查归在一组；分页仍由服务端按检查记录计算。
       if (this.isLoading) {
         Column() {
           LoadingProgress()
             .width(48)
             .height(48)
-            .color('#1f477d')
+            .color(AppTheme.primary)
           Text('加载中...')
             .fontSize(14)
-            .fontColor('#586b82')
+            .fontColor(AppTheme.secondary)
             .margin({ top: 16 })
         }
         .width('100%')
@@ -600,7 +563,7 @@ struct TaskListPage {
         Column() {
           Text(this.listMode === 'archived' ? '暂无归档检查' : '暂无符合条件的检查')
             .fontSize(14)
-            .fontColor('#7d90a8')
+            .fontColor(AppTheme.muted)
         }
         .width('100%')
         .layoutWeight(1)
@@ -615,11 +578,11 @@ struct TaskListPage {
                     Text(group.name)
                       .fontSize(17)
                       .fontWeight(FontWeight.Bold)
-                      .fontColor('#1e2d3e')
+                      .fontColor(AppTheme.text)
                       .width('100%')
-                    Text(`病例 ID：${group.caseId} · 本页 ${group.tasks.length} 次检查`)
+                    Text(`本页 ${group.tasks.length} 次检查`)
                       .fontSize(11)
-                      .fontColor('#586b82')
+                      .fontColor(AppTheme.secondary)
                       .width('100%')
                       .margin({ top: 4 })
                   }
@@ -627,11 +590,12 @@ struct TaskListPage {
 
                   if (this.listMode === 'active') {
                     Button('新增复查')
-                      .height(34)
+                      .enabled(!this.actionTaskId)
+                      .height(AppTheme.buttonHeight)
                       .fontSize(12)
-                      .backgroundColor('#1f477d')
-                      .fontColor('#ffffff')
-                      .borderRadius(8)
+                      .backgroundColor(AppTheme.primary)
+                      .fontColor(AppTheme.surface)
+                      .borderRadius(AppTheme.buttonRadius)
                       .margin({ left: 8 })
                       .onClick(() => { this.startFollowUp(group.tasks[0]); })
                   }
@@ -639,7 +603,7 @@ struct TaskListPage {
                 .width('100%')
                 .padding({ left: 14, right: 14, top: 14, bottom: 12 })
                 .backgroundColor('#eaf2ff')
-                .borderRadius(12)
+                .borderRadius(AppTheme.cardRadius)
                 .margin({ bottom: 8 })
 
                 ForEach(group.tasks, (task: TaskSummaryResponse) => {
@@ -659,20 +623,20 @@ struct TaskListPage {
       if (this.successMessage) {
         Text(this.successMessage)
           .fontSize(13)
-          .fontColor('#18794e')
+          .fontColor(AppTheme.success)
           .width('90%')
           .padding(10)
-          .backgroundColor('#dcfce7')
-          .borderRadius(8)
+          .backgroundColor(AppTheme.successBackground)
+          .borderRadius(AppTheme.buttonRadius)
           .margin({ bottom: 8 })
       }
       if (this.total > this.pageSize) {
         Row() {
           Button('上一页')
-            .height(36)
+            .height(AppTheme.buttonHeight)
             .fontSize(12)
-            .backgroundColor(this.currentPage > 1 ? '#1f477d' : '#e6edf5')
-            .fontColor(this.currentPage > 1 ? '#ffffff' : '#7d90a8')
+            .backgroundColor(this.currentPage > 1 ? AppTheme.selected : AppTheme.surface)
+            .fontColor(this.currentPage > 1 ? AppTheme.surface : AppTheme.muted)
             .borderRadius(6)
             .enabled(this.currentPage > 1)
             .onClick(() => {
@@ -683,13 +647,13 @@ struct TaskListPage {
 
           Text(`第 ${this.currentPage} / ${this.totalPages} 页，共 ${this.total} 项`)
             .fontSize(12)
-            .fontColor('#586b82')
+            .fontColor(AppTheme.secondary)
 
           Button('下一页')
-            .height(36)
+            .height(AppTheme.buttonHeight)
             .fontSize(12)
-            .backgroundColor(this.currentPage < this.totalPages ? '#1f477d' : '#e6edf5')
-            .fontColor(this.currentPage < this.totalPages ? '#ffffff' : '#7d90a8')
+            .backgroundColor(this.currentPage < this.totalPages ? AppTheme.selected : AppTheme.surface)
+            .fontColor(this.currentPage < this.totalPages ? AppTheme.surface : AppTheme.muted)
             .borderRadius(6)
             .enabled(this.currentPage < this.totalPages)
             .onClick(() => {
@@ -707,16 +671,16 @@ struct TaskListPage {
       if (this.errorMessage) {
         Text(this.errorMessage)
           .fontSize(14)
-          .fontColor('#b42318')
+          .fontColor(AppTheme.danger)
           .width('90%')
           .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-          .backgroundColor('#fee2e2')
-          .borderRadius(8)
+          .backgroundColor(AppTheme.dangerBackground)
+          .borderRadius(AppTheme.buttonRadius)
           .margin({ bottom: 8 })
       }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#f2f5f9')
+    .backgroundColor(AppTheme.background)
   }
 }

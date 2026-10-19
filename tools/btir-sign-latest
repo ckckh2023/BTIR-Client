@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""使用本机已续期材料，交互签署 dist 中当前版本的鸿蒙安装包。"""
+import json
+import os
+from pathlib import Path
+import sys
+
+project = Path(__file__).resolve().parent.parent
+version = json.loads((project / 'AppScope/app.json5').read_text())['app']['versionName']
+source = project / 'dist' / f'BTIR-HarmonyOS-v{version}-unsigned.hap'
+output = project / 'dist' / f'BTIR-HarmonyOS-v{version}-signed.hap'
+if not source.is_file():
+    sys.exit(f'找不到当前版本构建产物：{source}')
+
+os.execv(sys.executable, [sys.executable, str(project / 'tools/btir-sign'), 'sign',
+    '--input', str(source),
+    '--certificate', str(project / '.signing/BTIR-round2.cer'),
+    '--profile', str(project / '.signing/BTIR-round2.p7b'),
+    '--output', str(output)])

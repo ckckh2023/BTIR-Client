@@ -1,3 +1,5 @@
+import { PageHeader } from '../components/PageHeader';
+import { AppTheme } from '../common/AppTheme';
 import { AuthService } from '../service/AuthService';
 import { ApiError } from '../common/ApiError';
 import { TokenManager } from '../common/HttpClient';
@@ -20,7 +22,7 @@ struct LoginPage {
   private authService: AuthService = new AuthService();
 
   aboutToAppear(): void {
-    this.apiBaseUrl = AppStorage.get<string>('api_base_url') ?? 'https://btir-online.ai-premol.cn';
+    this.apiBaseUrl = ApiConfig.getInstance().baseUrl;
     if (TokenManager.getInstance().isLoggedIn()) {
       if (TokenManager.getInstance().mustChangePassword) {
         router.replaceUrl({ url: 'pages/ChangePasswordPage' });
@@ -31,6 +33,7 @@ struct LoginPage {
   }
 
   async handleSubmit(): Promise<void> {
+    if (this.isLoading) return;
     const username = this.username.trim();
     if (!username) {
       this.errorMessage = '请输入用户名';
@@ -106,42 +109,32 @@ struct LoginPage {
 
   build() {
     Column() {
-      // 顶部 Logo 区域
-      Column() {
-        Text('智瞳医脑')
-          .fontSize(32)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#1f477d')
-          .margin({ top: 80 })
-
-        Text('脑肿瘤MRI影像智能辅助诊断系统')
-          .fontSize(14)
-          .fontColor('#7d90a8')
-          .margin({ top: 8 })
-      }
-      .width('100%')
-      .justifyContent(FlexAlign.Center)
-      .margin({ bottom: 40 })
+    PageHeader({ title: '智瞳医脑', showBack: false, canLeave: !this.isLoading })
+    Scroll() {
+    Column() {
+      Text(this.isRegisterMode ? '创建账号' : '账号登录').fontSize(24).fontWeight(FontWeight.Bold).fontColor(AppTheme.primary).width('85%').margin({ bottom: 24 })
 
       Row() {
         Button('登录')
+          .enabled(!this.isLoading)
           .width('50%')
-          .height(40)
+          .height(AppTheme.buttonHeight)
           .fontSize(16)
-          .backgroundColor(this.isRegisterMode ? '#e6edf5' : '#1f477d')
-          .fontColor(this.isRegisterMode ? '#586b82' : '#ffffff')
-          .borderRadius(8)
+          .backgroundColor(this.isRegisterMode ? AppTheme.disabled : AppTheme.primary)
+          .fontColor(this.isRegisterMode ? AppTheme.secondary : AppTheme.surface)
+          .borderRadius(AppTheme.buttonRadius)
           .onClick(() => {
             this.isRegisterMode = false;
             this.errorMessage = '';
           })
         Button('注册')
+          .enabled(!this.isLoading)
           .width('50%')
-          .height(40)
+          .height(AppTheme.buttonHeight)
           .fontSize(16)
-          .backgroundColor(this.isRegisterMode ? '#1f477d' : '#e6edf5')
-          .fontColor(this.isRegisterMode ? '#ffffff' : '#586b82')
-          .borderRadius(8)
+          .backgroundColor(this.isRegisterMode ? AppTheme.primary : AppTheme.disabled)
+          .fontColor(this.isRegisterMode ? AppTheme.surface : AppTheme.secondary)
+          .borderRadius(AppTheme.buttonRadius)
           .onClick(() => {
             this.isRegisterMode = true;
             this.errorMessage = '';
@@ -156,8 +149,8 @@ struct LoginPage {
           .width('100%')
           .height(48)
           .fontSize(16)
-          .backgroundColor('#f7f9fc')
-          .borderRadius(8)
+          .backgroundColor(AppTheme.subtle)
+          .borderRadius(AppTheme.buttonRadius)
           .padding({ left: 16, right: 16 })
           .onChange((value: string) => {
             this.username = value;
@@ -170,8 +163,8 @@ struct LoginPage {
           .height(48)
           .fontSize(16)
           .type(InputType.Password)
-          .backgroundColor('#f7f9fc')
-          .borderRadius(8)
+          .backgroundColor(AppTheme.subtle)
+          .borderRadius(AppTheme.buttonRadius)
           .padding({ left: 16, right: 16 })
           .onChange((value: string) => {
             this.password = value;
@@ -185,8 +178,8 @@ struct LoginPage {
             .height(48)
             .fontSize(16)
             .type(InputType.Password)
-            .backgroundColor('#f7f9fc')
-            .borderRadius(8)
+            .backgroundColor(AppTheme.subtle)
+            .borderRadius(AppTheme.buttonRadius)
             .padding({ left: 16, right: 16 })
             .onChange((value: string) => {
               this.confirmPassword = value;
@@ -196,19 +189,18 @@ struct LoginPage {
         }
       }
       .width('85%')
-      .padding({ left: 20, right: 20 })
 
       // 错误提示
       if (this.errorMessage) {
         Row() {
           Text(this.errorMessage)
             .fontSize(14)
-            .fontColor('#b42318')
+            .fontColor(AppTheme.danger)
         }
         .width('85%')
         .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-        .backgroundColor('#fee2e2')
-        .borderRadius(8)
+        .backgroundColor(AppTheme.dangerBackground)
+        .borderRadius(AppTheme.buttonRadius)
         .margin({ top: 8, bottom: 8 })
       }
 
@@ -218,9 +210,9 @@ struct LoginPage {
         .height(48)
         .fontSize(16)
         .fontWeight(FontWeight.Medium)
-        .backgroundColor('#1f477d')
-        .fontColor('#ffffff')
-        .borderRadius(8)
+        .backgroundColor(AppTheme.primary)
+        .fontColor(AppTheme.surface)
+        .borderRadius(AppTheme.buttonRadius)
         .enabled(!this.isLoading)
         .margin({ top: 16 })
         .onClick(() => {
@@ -231,7 +223,7 @@ struct LoginPage {
       Row() {
         Text('服务器地址')
           .fontSize(12)
-          .fontColor('#7d90a8')
+          .fontColor(AppTheme.muted)
           .onClick(() => {
             this.showApiConfig = !this.showApiConfig;
           })
@@ -239,23 +231,30 @@ struct LoginPage {
         if (this.showApiConfig) {
           TextInput({ text: this.apiBaseUrl, placeholder: 'API Base URL' })
             .width('60%')
-            .height(36)
+            .height(AppTheme.buttonHeight)
             .fontSize(12)
-            .backgroundColor('#f7f9fc')
+            .backgroundColor(AppTheme.subtle)
             .borderRadius(4)
             .onChange((value: string) => {
               this.apiBaseUrl = value;
             })
 
           Button('保存')
-            .height(36)
+            .enabled(!this.isLoading)
+            .height(AppTheme.buttonHeight)
             .fontSize(12)
-            .backgroundColor('#1f477d')
-            .fontColor('#ffffff')
+            .backgroundColor(AppTheme.primary)
+            .fontColor(AppTheme.surface)
             .borderRadius(4)
             .onClick(() => {
-              ApiConfig.getInstance().setBaseUrl(this.apiBaseUrl);
-              this.showApiConfig = false;
+              try {
+                if (ApiConfig.getInstance().setBaseUrl(this.apiBaseUrl)) TokenManager.getInstance().clearAuth();
+                this.apiBaseUrl = ApiConfig.getInstance().baseUrl;
+                this.errorMessage = '';
+                this.showApiConfig = false;
+              } catch (error) {
+                this.errorMessage = (error as Error).message;
+              }
             })
         }
       }
@@ -263,8 +262,12 @@ struct LoginPage {
       .justifyContent(FlexAlign.Center)
       .margin({ top: 24 })
     }
+    .width('92%').padding({ top: 28, bottom: 28 }).backgroundColor(AppTheme.surface).borderRadius(AppTheme.cardRadius)
+    .border({ width: 1, color: AppTheme.border }).margin({ top: 24, bottom: 24 })
+    }
     .width('100%')
-    .height('100%')
-    .backgroundColor('#f2f5f9')
+    .layoutWeight(1).align(Alignment.Top)
+    .scrollBar(BarState.Off)
+    }.width('100%').height('100%').backgroundColor(AppTheme.background)
   }
 }

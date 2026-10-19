@@ -106,6 +106,11 @@ export interface FrontendResult {
   result_files?: ResultFiles;
 }
 
+export interface SliceProbability {
+  slice_index: number;
+  yes_probability: number;
+}
+
 export interface ClassificationResult {
   model: string;
   class: string;
@@ -116,6 +121,7 @@ export interface ClassificationResult {
   experimental?: boolean;
   modality?: string;
   evaluated_slices?: number;
+  slice_probability_series?: SliceProbability[];
   aggregation?: string;
 }
 
@@ -136,6 +142,10 @@ export interface CompositeRegionInfo {
 
 export interface SegmentationMorphology {
   max_axial_area_mm2?: number;
+  max_axial_slice_index?: number;
+  bounding_box_size_mm?: number[];
+  connected_components?: number;
+  largest_component_ratio?: number;
 }
 
 export interface RegionInfo {
@@ -148,11 +158,15 @@ export interface RegionInfo {
 
 export interface ModelConsensus {
   version?: string;
+  level?: string;
+  label?: string;
   summary?: string;
   consistency?: string;
   primary_evidence?: string;
   segmentation_detected?: boolean;
   segmentation_volume_mm3?: number;
+  segmentation_ratio?: number;
+  classification_positive_probability?: number;
   requires_review?: boolean;
 }
 

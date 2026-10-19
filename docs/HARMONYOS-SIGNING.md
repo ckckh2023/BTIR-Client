@@ -97,6 +97,16 @@ python3 tools/btir-sign sign \
 
 签名工具默认从 `~/.local/share/harmonyos/command-line-tools/sdk/default/openharmony/toolchains/lib/hap-sign-tool.jar` 加载。不同安装路径可用 `BTIR_HAP_SIGN_TOOL` 指定完整路径；`java` 与 `keytool` 应使用 JDK 21。
 
+### 本机使用现有续期材料签名
+
+本机已有 `BTIR-round2.cer`、`BTIR-round2.p7b` 和原 P12 时，构建完成后可直接运行：
+
+```bash
+python3 tools/btir-sign-latest
+```
+
+此入口读取工程当前版本，对 `dist/BTIR-HarmonyOS-v<版本>-unsigned.hap` 签名，成功后生成同目录的 `BTIR-HarmonyOS-v<版本>-signed.hap`，并执行官方完整性验证。两次密码在终端输入；已有输出不会覆盖。请将生成的 **signed.hap** 交给已登记的目标手机，不要发送 unsigned 构建产物。
+
 ## 4. 安装到已登记的真机
 
 ```bash

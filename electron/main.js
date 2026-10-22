@@ -1,6 +1,6 @@
 const { app, BrowserWindow, Menu, protocol, net, shell } = require('electron')
 const path = require('node:path')
-const { existsSync } = require('node:fs')
+const { existsSync, statSync } = require('node:fs')
 const { pathToFileURL } = require('node:url')
 
 const APP_SCHEME = 'app'
@@ -47,6 +47,15 @@ const handleAppRequest = (request) => {
     const filePath = resolveWithin(baseDir, decodeURIComponent(relativePath))
     if (!filePath) {
         return new Response('Forbidden', { status: 403 })
+    }
+    if (request.method === 'HEAD') {
+        try {
+            const info = statSync(filePath)
+            if (!info.isFile()) return new Response(null, { status: 404 })
+            return new Response(null, { headers: { 'Content-Length': String(info.size) } })
+        } catch {
+            return new Response(null, { status: 404 })
+        }
     }
     return net.fetch(pathToFileURL(filePath).href)
 }

@@ -759,6 +759,9 @@
                 },
             },
             methods: {
+                openSettings() {
+                    window.location.href = 'setting.html'
+                },
                 startProgressMotion() {
                     if (this.progressMotionActive) return
                     this.progressMotionActive = true
@@ -1494,9 +1497,6 @@
                 openAbout() {
                     window.location.href = 'about.html'
                 },
-                openSettings() {
-                    window.location.href = 'setting.html'
-                },
                 handleHomeClick() {
                     if (this.taskId) {
                         this.startNewUpload()
@@ -2086,8 +2086,8 @@
                         })
                         contentClone.querySelectorAll('button, .case-preview-dots, .file-downloads, .task-manager, .no-print').forEach(n => n.remove())
                         const contentHTML = contentClone.outerHTML
-                        const cssBase = new URL('./theme.css', document.baseURI).href
-                        const cssApp = new URL('./app.css', document.baseURI).href
+                        const cssBase = new URL('./styles/theme.css', document.baseURI).href
+                        const cssApp = new URL('./styles/app.css', document.baseURI).href
                         const logoSrc = new URL('/assets/icon_exp.png', document.baseURI).href
                         const printLogoSrc = await this.buildReportPrintLogo(logoSrc)
                         const caseName = this.escapeHtml(this.caseName || this.caseId || this.taskId || '')

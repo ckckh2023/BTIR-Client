@@ -5,7 +5,7 @@ BTIR 项目的桌面客户端，基于 Electron 打包。前端资源随应用�
 # 环境要求
 
 - Node.js ≥ 18
-- 桌面运行时为 Electron 34.5.8
+- Git
 - 桌面运行时为 Electron 34.5.8
 - 服务端需在 `BTIR_CORS_ORIGINS` 中放行 `app://btir`
 
@@ -21,11 +21,12 @@ npm start # 开发模式启动，直接读取 renderer/ 下的前端源码
 主仓库更新前端后：
 
 ```bash
-npm run sync # 从 BITR 主仓库的 frontend/ 同步 到 renderer/
-node electron/sync.js /path/to/repo # 或指定主仓库路径
+npm run sync # 从 GitHub 主仓库 main 分支同步前端与资源
+npm run sync -- --ref main # 可改为团队指定的分支、标签或提交号
+node electron/sync.js /path/to/repo # 仅本地联调时显式指定路径
 ```
 
-注意：`sync` 会整体覆盖 `renderer/frontend` 与 `renderer/assets`，同步后请用 `git diff` 检查再提交。
+注意：默认同步只读取 GitHub 已提交的内容，并输出提交号；保留桌面设置并自动适配客户端。同步后请用 `git diff` 检查再提交。
 
 ## 打包
 
@@ -38,7 +39,7 @@ npm run dist:harmony # 鸿蒙 PC
 
 Windows、Linux 默认产物为绿色免安装目录。
 
-Windows 可以使用 `npx electron-builder --prepackaged release/win-unpacked --win nsis --x64 --publish never --config build/nsis-win.json` 进行打包。
+Windows 可以使用 `npx electron-builder --win nsis --x64 --publish never` 生成安装包。
 
 Linux 可以使用 `npx electron-builder --linux AppImage deb` 进行 AppImage 和 Deb 包的产出。
 

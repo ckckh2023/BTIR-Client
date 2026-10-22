@@ -1,0 +1,10 @@
+.auth-card .desktop-settings-button {
+    position: absolute;
+    top: 14px;
+    right: 60px;
+}
+
+@media (max-width: 560px) {
+    .auth-card .desktop-settings-button { top: 10px; right: 56px; }
+    .auth-card-with-desktop-actions { padding-top: 60px; }
+}

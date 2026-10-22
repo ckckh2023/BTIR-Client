@@ -12,8 +12,9 @@ const readSavedApiBase = () => {
 }
 
 const savedApiBase = readSavedApiBase()
+const defaultApiBase = ENV_API_BASE || DEFAULT_API_BASE
 
 contextBridge.exposeInMainWorld('btirEnv', {
-    apiBase: ENV_API_BASE || savedApiBase || DEFAULT_API_BASE,
-    defaultApiBase: DEFAULT_API_BASE,
+    apiBase: savedApiBase || defaultApiBase,
+    defaultApiBase,
 })

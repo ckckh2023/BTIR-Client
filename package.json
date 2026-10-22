@@ -26,7 +26,8 @@
       "buildResources": "build"
     },
     "files": [
-      "electron/**"
+      "electron/main.js",
+      "electron/preload.js"
     ],
     "extraResources": [
       {
